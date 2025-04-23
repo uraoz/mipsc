@@ -135,7 +135,7 @@ Token *tokenize(char *p) {
 			cur->val = strtol(p, &p, 10);
 			continue;
 		}
-		if (*p == '+' || *p == '-' || *p == '*' || *p == '/') {
+		if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '(' || * p == ')') {
 			cur = new_token(TK_RESERVED, cur, p);
 			p++;
 			continue;
