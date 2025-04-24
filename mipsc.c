@@ -38,6 +38,7 @@ struct Token{
 	Token *next; //次のトークン
 	int val; //kindがTK_NUMのときの数値
 	char *str; //トークン文字列
+	int len; //トークンの長さ
 };
 
 
@@ -48,6 +49,10 @@ typedef enum {
 	ND_MUL, //乗算
 	ND_DIV, //除算
 	ND_NUM, //整数
+	ND_EQ, //等しい
+	ND_NE, //等しくない
+	ND_LT, //小さい
+	ND_LE, //小さいか等しい
 } NodeKind;
 
 typedef struct Node Node;
@@ -61,18 +66,21 @@ struct Node {
 };
 
 // 関数プロトタイプ宣言
-bool consume(char op);
-void expect(char op);
+bool consume(char* op);
+void expect(char* op);
 int expect_number();
 void error(char* fmt, ...);
 Token* tokenize(char* p);
-Token* new_token(TokenKind kind, Token* cur, char* str);
+Token* new_token(TokenKind kind, Token* cur, char* str, int len);
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);
 Node* new_node_num(int val);
 Node* expr();
 Node* mul();
 Node* primary();
 Node* unary();
+Node* equality();
+Node* relational();
+Node* add();
 void gen(Node* node);
 
 
@@ -86,16 +94,16 @@ void error(char *fmt, ...){
 	exit(1);
 }
 // 次のトークンを読み込んで期待したものか返す
-bool consume(char op) {
-	if (token->kind != TK_RESERVED || token->str[0] != op)
+bool consume(char* op) {
+	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str,op,token->len))
 		return false;
 	token = token->next;
 	return true;
 }
 // t次のトークンが期待したものならトークンを一つ読み進める
 // それ以外ではエラーを返す
-void expect(char op) {
-	if (token->kind != TK_RESERVED || token->str[0] != op)
+void expect(char* op) {
+	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str, op, token->len))
 		error("'%c'ではありません", op);
 	token = token->next;
 }
@@ -114,12 +122,17 @@ bool at_eof() {
 }
 
 //新しいトークンを作成してcurに繋げる
-Token *new_token(TokenKind kind, Token *cur, char *str) {
+Token *new_token(TokenKind kind, Token *cur, char *str, int len) {
 	Token *tok = calloc(1, sizeof(Token));
 	tok->kind = kind;
 	tok->str = str;
 	cur->next = tok;
+	tok->len = len;
 	return tok;
+}
+
+bool startwith(char* p, char* str) {
+	return strncmp(p, str, strlen(str)) == 0;
 }
 // 入力文字列pをトークンに分割してそれを返す
 Token *tokenize(char *p) {
@@ -132,18 +145,27 @@ Token *tokenize(char *p) {
 			continue;
 		}
 		if (isdigit(*p)) {
-			cur = new_token(TK_NUM, cur, p);
+			cur = new_token(TK_NUM, cur, p, 0);
+			char* q = p;
 			cur->val = strtol(p, &p, 10);
+			cur->len = p - q;
 			continue;
 		}
-		if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '(' || * p == ')') {
-			cur = new_token(TK_RESERVED, cur, p);
+		//一文字の記号
+		if (strchr("+-*/()<>",*p)){
+			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
 		}
-		error("トークナイズできません");
+		//二文字の記号
+		if (startwith(p, "==") || startwith(p, "!=") || startwith(p, "<=") || startwith(p, ">=")) {
+			cur = new_token(TK_RESERVED, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		
 	}
-	new_token(TK_EOF, cur, p);
+	new_token(TK_EOF, cur, p, 0);
 	return head.next;
 }
 
@@ -166,13 +188,46 @@ Node* new_node_num(int val) {
 
 //ノードのパーサ
 Node* expr() {
+	return equality();
+}
+//等号と不等号のノードを作成する関数
+Node* equality() {
+	Node* node = relational();
+
+	while (1) {
+		if (consume("=="))
+			node = new_node(ND_EQ, node, relational());
+		else if (consume("!="))
+			node = new_node(ND_NE, node, relational());
+		else
+			return node;
+	}
+}
+//小なりと大なりのノードを作成する関数
+Node* relational() {
+	Node* node = add();
+	while (1) {
+		if (consume("<"))
+			node = new_node(ND_LT, node, add());
+		else if (consume("<="))
+			node = new_node(ND_LE, node, add());
+		else if (consume(">"))
+			node = new_node(ND_LT, add(), node);
+		else if (consume(">="))
+			node = new_node(ND_LE, add(), node);
+		else
+			return node;
+	}
+}
+//加算と減算のノードを作成する関数
+Node* add() {
 	Node* node = mul();
 	while (1) {
-		if (consume('+')) {
+		if (consume("+")) {
 			node = new_node(ND_ADD, node, mul());
 			continue;
 		}
-		if (consume('-')) {
+		if (consume("-")) {
 			node = new_node(ND_SUB, node, mul());
 			continue;
 		}
@@ -180,15 +235,15 @@ Node* expr() {
 	}
 	return node;
 }
-
+//乗算と除算のノードを作成する関数
 Node* mul() {
 	Node* node = unary();
 	while (1) {
-		if (consume('*')) {
+		if (consume("*")) {
 			node = new_node(ND_MUL, node, unary());
 			continue;
 		}
-		if (consume('/')) {
+		if (consume("/")) {
 			node = new_node(ND_DIV, node, unary());
 			continue;
 		}
@@ -196,10 +251,11 @@ Node* mul() {
 	}
 	return node;
 }
+//数値または'('で始まるノードを作成する関数
 Node* primary() {
-	if (consume('(')) {
+	if (consume("(")) {
 		Node* node = expr();
-		expect(')');
+		expect(")");
 		return node;
 	}
 	if (token->kind == TK_NUM) {
@@ -207,11 +263,11 @@ Node* primary() {
 	}
 	error("数値でも'('でもありません");
 }
-
+//単項演算子のノードを作成する関数
 Node* unary() {
-	if (consume('+'))
+	if (consume("+"))
 		return primary();
-	if (consume('-'))
+	if (consume("-"))
 		return new_node(ND_SUB, new_node_num(0), primary());
 	return primary();
 }
@@ -242,6 +298,18 @@ void gen(Node *node) {
 	case ND_DIV:
 		printf("	div $t0, $t1\n");
 		printf("	mflo $t0\n");
+		break;
+	case ND_EQ:
+		printf("	seq $t0, $t0, $t1\n");
+		break;
+	case ND_NE:
+		printf("	sne $t0, $t0, $t1\n");
+		break;
+	case ND_LT:
+		printf("	slt $t0, $t0, $t1\n");
+		break;
+	case ND_LE:
+		printf("	sle $t0, $t0, $t1\n");
 		break;
 	default:
 		error("不正な演算子です");
