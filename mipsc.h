@@ -15,6 +15,7 @@ void error_at(char* loc, char* fmt, ...);
 typedef enum {
 	TK_RESERVED, //記号
 	TK_NUM, //整数
+	TK_IDENT, //識別子
 	TK_EOF, //入力の終わり
 } TokenKind;
 
@@ -40,6 +41,8 @@ typedef enum {
 	ND_NE, //等しくない
 	ND_LT, //小さい
 	ND_LE, //小さいか等しい
+	ND_ASSIGN, //代入
+	ND_LVAR, //ローカル変数
 } NodeKind;
 
 typedef struct Node Node;
@@ -50,6 +53,7 @@ struct Node {
 	Node* lhs; //左辺
 	Node* rhs; //右辺
 	int val; //kindがND_NUMのときの数値
+	int offset; //kindがND_LVARのときのオフセット
 };
 
 extern char* user_input; //入力文字列
@@ -57,6 +61,7 @@ extern Token* token;//今読んでいるtoken
 
 // パーサ関連の関数
 Token* tokenize(char* p);
+Token* consume_ident();
 bool consume(char* op);
 void expect(char* op);
 int expect_number();
@@ -69,10 +74,11 @@ Node* add();
 Node* mul();
 Node* unary();
 Node* primary();
-
+void program();
+extern Node* code[100];
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);
 Node* new_node_num(int val);
 
 // コード生成関連の関数
 void gen(Node* node);
-
+void gen_lval(Node* node);

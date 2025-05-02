@@ -25,12 +25,27 @@ void error_at(char* loc, char* fmt, ...) {
 
 int main(int argc, char** argv) {
 	if (argc != 2) {
-		fprintf(stderr, "引数が正しくない\n");
+		fprintf(stderr, "not correct arguments\n");
 		return 1;
 	}
+	//トークナイズ
 	user_input = argv[1];
 	token = tokenize(user_input);
-	Node* node = expr();
+	Token* tmp = token;
+	printf("デバッグ: トークン一覧\n");
+	while (tmp) {
+		if (tmp->kind == TK_RESERVED) {
+			printf("予約語: %.*s\n", tmp->len, tmp->str);
+		}
+		else if (tmp->kind == TK_NUM) {
+			printf("数値: %d\n", tmp->val);
+		}
+		else if (tmp->kind == TK_EOF) {
+			printf("EOF\n");
+		}
+		tmp = tmp->next;
+	}
+	program();
 
 	//アセンブリの前半を出力
 	printf(".data\n");
@@ -40,11 +55,24 @@ int main(int argc, char** argv) {
 	printf(".globl __start\n");
 	printf("__start:\n");
 	printf("main:\n");
-	//スタックポインタを初期化
-	gen(node);
-	printf("	lw $t0, 0($sp)\n");
+	//変数の領域の確保
+	printf("	sw $t0, 0($fp)\n");
+	printf("	addi $fp, $fp, -4\n");
+	printf("	addi $fp, $sp, 0\n");
+	printf("	addi $sp, $sp, -4096\n");
+	//code[0]から順に命令を出力
+	for (int i = 0; code[i]; i++) {
+		gen(code[i]);
+		//式の結果にスタックが残っているのでpopする
+		printf("	lw $t1, 0($sp)\n");
+		printf("	addi $sp, $sp, 4\n");
+	}
+	//終了処理　$t1に結果が入っているので返り値に入れる
+	printf("	addi $sp, $fp, 0\n");
+	printf("	addi $fp, $fp, 4\n");
+	printf("	lw $t0, $sp, 4\n");
 	printf("	addi $sp, $sp, 4\n");
-	printf("	addi $a0, $t0, 0\n");//実行コード
+	printf("	addi $a0, $t1, 0\n");//実行コード
 	printf("	li $v0,4001\n");
 	printf("	syscall\n");
 	return 0;
