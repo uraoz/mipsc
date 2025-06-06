@@ -11,58 +11,71 @@
 void error(char* fmt, ...);
 void error_at(char* loc, char* fmt, ...);
 
-//ƒg[ƒNƒ“‚Ìí—Ş‚ğ•\‚·enum
+// ãƒˆãƒ¼ã‚¯ãƒ³ã®ç¨®é¡ã‚’è¡¨ã™enum
 typedef enum {
-	TK_RESERVED, //‹L†
-	TK_NUM, //®”
-	TK_IDENT, //¯•Êq
-	TK_EOF, //“ü—Í‚ÌI‚í‚è
+	TK_RESERVED, // è¨˜å·
+	TK_NUM, // æ•´æ•°
+	TK_IDENT, // è­˜åˆ¥å­
+	TK_RETURN, // return
+	TK_EOF, // å…¥åŠ›ã®çµ‚ã‚ã‚Š
 } TokenKind;
 
 typedef struct Token Token;
 
 struct Token {
 	TokenKind kind;
-	Token* next; //Ÿ‚Ìƒg[ƒNƒ“
-	int val; //kind‚ªTK_NUM‚Ì‚Æ‚«‚Ì”’l
-	char* str; //ƒg[ƒNƒ“•¶š—ñ
-	int len; //ƒg[ƒNƒ“‚Ì’·‚³
+	Token* next; // æ¬¡ã®ãƒˆãƒ¼ã‚¯ãƒ³
+	int val; // kindãŒTK_NUMã®ã¨ãã®æ•°å€¤
+	char* str; // ãƒˆãƒ¼ã‚¯ãƒ³æ–‡å­—åˆ—
+	int len; // ãƒˆãƒ¼ã‚¯ãƒ³ã®é•·ã•
 };
 
 
-//’ŠÛ\•¶–Ø‚Ìƒm[ƒh‚Ìí—Ş‚ğ•\‚·enum
+// æŠ½è±¡æ§‹æ–‡æœ¨ã®ãƒãƒ¼ãƒ‰ã®ç¨®é¡ã‚’è¡¨ã™enum
 typedef enum {
-	ND_ADD, //‰ÁZ
-	ND_SUB, //Œ¸Z
-	ND_MUL, //æZ
-	ND_DIV, //œZ
-	ND_NUM, //®”
-	ND_EQ, //“™‚µ‚¢
-	ND_NE, //“™‚µ‚­‚È‚¢
-	ND_LT, //¬‚³‚¢
-	ND_LE, //¬‚³‚¢‚©“™‚µ‚¢
-	ND_ASSIGN, //‘ã“ü
-	ND_LVAR, //ƒ[ƒJƒ‹•Ï”
+	ND_ADD, // åŠ ç®—
+	ND_SUB, // æ¸›ç®—
+	ND_MUL, // ä¹—ç®—
+	ND_DIV, // é™¤ç®—
+	ND_NUM, // æ•´æ•°
+	ND_EQ, // ç­‰ã—ã„
+	ND_NE, // ç­‰ã—ããªã„
+	ND_LT, // å°ã•ã„
+	ND_LE, // å°ã•ã„ã‹ç­‰ã—ã„
+	ND_ASSIGN, // ä»£å…¥
+	ND_LVAR, // ãƒ­ãƒ¼ã‚«ãƒ«å¤‰æ•°
+	ND_RETURN, // returnæ–‡
 } NodeKind;
 
 typedef struct Node Node;
 
-//’ŠÛ\•¶–Ø‚Ìƒm[ƒh‚Ì\‘¢‘Ì
+// æŠ½è±¡æ§‹æ–‡æœ¨ã®ãƒãƒ¼ãƒ‰ã®æ§‹é€ ä½“
 struct Node {
-	NodeKind kind; //ƒm[ƒh‚Ìí—Ş
-	Node* lhs; //¶•Ó
-	Node* rhs; //‰E•Ó
-	int val; //kind‚ªND_NUM‚Ì‚Æ‚«‚Ì”’l
-	int offset; //kind‚ªND_LVAR‚Ì‚Æ‚«‚ÌƒIƒtƒZƒbƒg
+	NodeKind kind; // ãƒãƒ¼ãƒ‰ã®ç¨®é¡
+	Node* lhs; // å·¦è¾º
+	Node* rhs; // å³è¾º
+	int val; // kindãŒND_NUMã®ã¨ãã®æ•°å€¤
+	int offset; // kindãŒND_LVARã®ã¨ãã®ã‚ªãƒ•ã‚»ãƒƒãƒˆ
 };
 
-extern char* user_input; //“ü—Í•¶š—ñ
-extern Token* token;//¡“Ç‚ñ‚Å‚¢‚étoken
+// å¤‰æ•°ã‚’ç®¡ç†ã™ã‚‹æ§‹é€ ä½“
+typedef struct LVar LVar;
+struct LVar {
+	LVar* next; // æ¬¡ã®å¤‰æ•°ã‹NULL
+	char* name; // å¤‰æ•°ã®åå‰
+	int len;    // åå‰ã®é•·ã•
+	int offset; // RBPã‹ã‚‰ã®ã‚ªãƒ•ã‚»ãƒƒãƒˆ
+};
 
-// ƒp[ƒTŠÖ˜A‚ÌŠÖ”
+extern char* user_input; // å…¥åŠ›æ–‡å­—åˆ—
+extern Token* token; // ç¾åœ¨èª­ã‚“ã§ã„ã‚‹token
+extern LVar* locals; // ãƒ­ãƒ¼ã‚«ãƒ«å¤‰æ•°ã®ãƒªã‚¹ãƒˆ
+
+// ãƒ‘ãƒ¼ã‚µé–¢é€£ã®é–¢æ•°
 Token* tokenize(char* p);
 Token* consume_ident();
 bool consume(char* op);
+bool consume_return();
 void expect(char* op);
 int expect_number();
 bool at_eof();
@@ -78,7 +91,8 @@ void program();
 extern Node* code[100];
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);
 Node* new_node_num(int val);
+LVar* find_lvar(Token* tok);
 
-// ƒR[ƒh¶¬ŠÖ˜A‚ÌŠÖ”
+// ã‚³ãƒ¼ãƒ‰ç”Ÿæˆé–¢é€£ã®é–¢æ•°
 void gen(Node* node);
 void gen_lval(Node* node);

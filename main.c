@@ -1,7 +1,8 @@
 #include "mipsc.h"
 
-char* user_input; //“ü—Í•¶š—ñ
-Token* token; //¡“Ç‚ñ‚Å‚¢‚étoken
+char* user_input; // å…¥åŠ›æ–‡å­—åˆ—
+Token* token; // ç¾åœ¨èª­ã‚“ã§ã„ã‚‹token
+LVar* locals; // ãƒ­ãƒ¼ã‚«ãƒ«å¤‰æ•°ã®ãƒªã‚¹ãƒˆ
 
 void error(char* fmt, ...) {
 	va_list ap;
@@ -10,7 +11,7 @@ void error(char* fmt, ...) {
 	fprintf(stderr, "\n");
 	exit(1);
 }
-//ƒGƒ‰[‰ÓŠ‚ğ•ñ‚·‚é
+// ã‚¨ãƒ©ãƒ¼ç®‡æ‰€ã‚’å ±å‘Šã™ã‚‹
 void error_at(char* loc, char* fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
@@ -28,26 +29,11 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "not correct arguments\n");
 		return 1;
 	}
-	//ƒg[ƒNƒiƒCƒY
 	user_input = argv[1];
 	token = tokenize(user_input);
-	Token* tmp = token;
-	printf("ƒfƒoƒbƒO: ƒg[ƒNƒ“ˆê——\n");
-	while (tmp) {
-		if (tmp->kind == TK_RESERVED) {
-			printf("—\–ñŒê: %.*s\n", tmp->len, tmp->str);
-		}
-		else if (tmp->kind == TK_NUM) {
-			printf("”’l: %d\n", tmp->val);
-		}
-		else if (tmp->kind == TK_EOF) {
-			printf("EOF\n");
-		}
-		tmp = tmp->next;
-	}
 	program();
 
-	//ƒAƒZƒ“ƒuƒŠ‚Ì‘O”¼‚ğo—Í
+	// ã‚¢ã‚»ãƒ³ãƒ–ãƒªã®å‰åŠéƒ¨ã‚’å‡ºåŠ›
 	printf(".data\n");
 	printf("stack: .space 4096\n");
 	printf(".text\n");
@@ -55,24 +41,18 @@ int main(int argc, char** argv) {
 	printf(".globl __start\n");
 	printf("__start:\n");
 	printf("main:\n");
-	//•Ï”‚Ì—Ìˆæ‚ÌŠm•Û
-	printf("	sw $t0, 0($fp)\n");
-	printf("	addi $fp, $fp, -4\n");
+	//ãƒ•ãƒ¬ãƒ¼ãƒ ãƒã‚¤ãƒ³ã‚¿ã¨ã‚¹ã‚¿ãƒƒã‚¯ãƒã‚¤ãƒ³ã‚¿ã®åˆæœŸåŒ–
 	printf("	addi $fp, $sp, 0\n");
 	printf("	addi $sp, $sp, -4096\n");
-	//code[0]‚©‚ç‡‚É–½—ß‚ğo—Í
+	//code[0]ã‹ã‚‰é †ã«å‘½ä»¤ã‚’å‡ºåŠ›
 	for (int i = 0; code[i]; i++) {
 		gen(code[i]);
-		//®‚ÌŒ‹‰Ê‚ÉƒXƒ^ƒbƒN‚ªc‚Á‚Ä‚¢‚é‚Ì‚Åpop‚·‚é
+		//å¼ã®çµæœã«ã‚¹ã‚¿ãƒƒã‚¯ã«æ®‹ã£ã¦ã„ã‚‹ã®ã§popã™ã‚‹
 		printf("	lw $t1, 0($sp)\n");
 		printf("	addi $sp, $sp, 4\n");
 	}
-	//I—¹ˆ—@$t1‚ÉŒ‹‰Ê‚ª“ü‚Á‚Ä‚¢‚é‚Ì‚Å•Ô‚è’l‚É“ü‚ê‚é
-	printf("	addi $sp, $fp, 0\n");
-	printf("	addi $fp, $fp, 4\n");
-	printf("	lw $t0, $sp, 4\n");
-	printf("	addi $sp, $sp, 4\n");
-	printf("	addi $a0, $t1, 0\n");//ÀsƒR[ƒh
+	//çµ‚äº†å‡¦ç† $t1ã«çµæœãŒå…¥ã£ã¦ã„ã‚‹ã®ã§è¿”ã‚Šå€¤ã«å…¥åŠ›
+	printf("	addi $a0, $t1, 0\n");//å®Ÿè¡Œã‚³ãƒ¼ãƒ‰
 	printf("	li $v0,4001\n");
 	printf("	syscall\n");
 	return 0;

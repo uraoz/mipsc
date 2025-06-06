@@ -1,22 +1,22 @@
 #include "mipsc.h"
 
 Node* code[100];
-// Ÿ‚Ìƒg[ƒNƒ“‚ğ“Ç‚İ‚ñ‚ÅŠú‘Ò‚µ‚½‚à‚Ì‚©•Ô‚·
+// æ¬¡ã®ãƒˆãƒ¼ã‚¯ãƒ³ãŒæœŸå¾…ã•ã‚Œã‚‹è¨˜å·ã§ã‚ã‚Œã°ãƒˆãƒ¼ã‚¯ãƒ³ã‚’èª­ã¿é€²ã‚ã‚‹
 bool consume(char* op) {
 	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str, op, token->len))
 		return false;
 	token = token->next;
 	return true;
 }
-// tŸ‚Ìƒg[ƒNƒ“‚ªŠú‘Ò‚µ‚½‚à‚Ì‚È‚çƒg[ƒNƒ“‚ğˆê‚Â“Ç‚İi‚ß‚é
-// ‚»‚êˆÈŠO‚Å‚ÍƒGƒ‰[‚ğ•Ô‚·
+// æ¬¡ã®ãƒˆãƒ¼ã‚¯ãƒ³ãŒæœŸå¾…ã•ã‚Œã‚‹è¨˜å·ã§ãªã‘ã‚Œã°ã‚¨ãƒ©ãƒ¼ã‚’å‡ºã™
+// ãã†ã§ãªã‘ã‚Œã°ãƒˆãƒ¼ã‚¯ãƒ³ã‚’èª­ã¿é€²ã‚ã‚‹
 void expect(char* op) {
 	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str, op, token->len))
 		error("'%s'is expected but not", op);
 	token = token->next;
 }
 
-// Ÿ‚Ìƒg[ƒNƒ“‚ª”’l‚È‚çƒg[ƒNƒ“‚ğˆê‚Â“Ç‚İi‚ß‚Ä‚»‚Ì”’l‚ğ•Ô‚·
+// æ¬¡ã®ãƒˆãƒ¼ã‚¯ãƒ³ãŒæ•°å€¤ãªã‚‰ãƒˆãƒ¼ã‚¯ãƒ³ã‚’èª­ã¿é€²ã‚ã¦ãã®æ•°å€¤ã‚’è¿”ã™
 int expect_number() {
 	if (token->kind != TK_NUM)
 		error("not a number");
@@ -29,7 +29,7 @@ bool at_eof() {
 	return token->kind == TK_EOF;
 }
 
-//V‚µ‚¢ƒg[ƒNƒ“‚ğì¬‚µ‚Äcur‚ÉŒq‚°‚é
+// æ–°ã—ã„ãƒˆãƒ¼ã‚¯ãƒ³ã‚’ä½œæˆã—ã¦curã«ç¹‹ã’ã‚‹
 Token* new_token(TokenKind kind, Token* cur, char* str, int len) {
 	Token* tok = calloc(1, sizeof(Token));
 	tok->kind = kind;
@@ -42,7 +42,7 @@ Token* new_token(TokenKind kind, Token* cur, char* str, int len) {
 bool startwith(char* p, char* str) {
 	return strncmp(p, str, strlen(str)) == 0;
 }
-// “ü—Í•¶š—ñp‚ğƒg[ƒNƒ“‚É•ªŠ„‚µ‚Ä‚»‚ê‚ğ•Ô‚·
+// å…¥åŠ›æ–‡å­—åˆ—pã‚’ãƒˆãƒ¼ã‚¯ãƒ³ã«åˆ†å‰²ã—ã¦è¿”ã™
 Token* tokenize(char* p) {
 	Token head;
 	head.next = NULL;
@@ -52,7 +52,7 @@ Token* tokenize(char* p) {
 			p++;
 			continue;
 		}
-		//”’l
+		// æ•°å€¤
 		if (isdigit(*p)) {
 			cur = new_token(TK_NUM, cur, p, 0);
 			char* q = p;
@@ -60,30 +60,50 @@ Token* tokenize(char* p) {
 			cur->len = p - q;
 			continue;
 		}
-		//ˆê•¶š‚Ì‹L†
-		if (strchr("+-*/()<>;", *p)) {
-			cur = new_token(TK_RESERVED, cur, p, 1);
-			p++;
-			continue;
-		}
-		//“ñ•¶š‚Ì‹L†
+		//äºŒæ–‡å­—ã®è¨˜å·
 		if (startwith(p, "==") || startwith(p, "!=") || startwith(p, "<=") || startwith(p, ">=")) {
 			cur = new_token(TK_RESERVED, cur, p, 2);
 			p += 2;
 			continue;
 		}
-		//1•¶š‚Ì•Ï”
-		if ('a' <= *p && *p <= 'z') {
-			cur = new_token(TK_IDENT, cur, p, 1);
-			cur->len = 1;
+		//ä¸€æ–‡å­—ã®è¨˜å·
+		if (strchr("+-*/()<>;=", *p)) {
+			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
 		}
-
+		//ã‚­ãƒ¼ãƒ¯ãƒ¼ãƒ‰ã¾ãŸã¯å¤‰æ•°ï¼ˆè‹±å°æ–‡å­—ï¼‰
+		if ('a' <= *p && *p <= 'z') {
+			char* start = p;
+			while (('a' <= *p && *p <= 'z') || ('0' <= *p && *p <= '9') || *p == '_') {
+				p++;
+			}
+			int len = p - start;
+			if (len == 6 && !memcmp(start, "return", 6)) {
+				cur = new_token(TK_RETURN, cur, start, len);
+			} else {
+				cur = new_token(TK_IDENT, cur, start, len);
+			}
+			cur->len = len;
+			continue;
+		}
+		
+		error_at(p, "invalid character");
 	}
 	new_token(TK_EOF, cur, p, 0);
 	return head.next;
 }
+
+// å¤‰æ•°ã‚’åå‰ã§æ¤œç´¢ã™ã‚‹ã€‚è¦‹ã¤ã‹ã‚‰ãªã‹ã£ãŸå ´åˆã¯NULLã‚’è¿”ã™ã€‚
+LVar* find_lvar(Token* tok) {
+	for (LVar* var = locals; var; var = var->next) {
+		if (var->len == tok->len && !memcmp(tok->str, var->name, var->len)) {
+			return var;
+		}
+	}
+	return NULL;
+}
+
 Token* consume_ident() {
 	if (token->kind != TK_IDENT)
 		return NULL;
@@ -92,8 +112,15 @@ Token* consume_ident() {
 	return tok;
 }
 
+bool consume_return() {
+	if (token->kind != TK_RETURN)
+		return false;
+	token = token->next;
+	return true;
+}
 
-//V‚µ‚¢ƒm[ƒh‚ğì¬‚·‚éŠÖ”
+
+// æ–°ã—ã„ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs) {
 	Node* node = calloc(1, sizeof(Node));
 	node->kind = kind;
@@ -110,10 +137,10 @@ Node* new_node_num(int val) {
 }
 
 
-//ƒm[ƒh‚Ìƒp[ƒT
+// ãƒãƒ¼ãƒ‰ã®ãƒ‘ãƒ¼ã‚µ
 /*
 program    = stmt*
-stmt       = expr ";"
+stmt       = "return" expr ";" | expr ";"
 expr       = assign
 assign     = equality ("=" assign)?
 equality   = relational ("==" relational | "!=" relational)*
@@ -124,7 +151,7 @@ unary      = ("+" | "-")? primary
 primary    = num | ident | "(" expr ")"
 */
 
-//ƒZƒ~ƒRƒƒ“‹æØ‚è‚Ì®‚ğƒp[ƒX‚·‚éŠÖ”
+// ã‚»ãƒŸã‚³ãƒ­ãƒ³åŒºåˆ‡ã‚Šã®æ–‡ã‚’ãƒ‘ãƒ¼ã‚¹ã™ã‚‹é–¢æ•°
 
 Node* assign() {
 	Node* node = equality();
@@ -136,7 +163,15 @@ Node* expr() {
 	return assign();
 }
 Node* stmt() {
-	Node* node = expr();
+	Node* node;
+	if (consume_return()) {
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_RETURN;
+		node->lhs = expr();
+		expect(";");
+		return node;
+	}
+	node = expr();
 	expect(";");
 	return node;
 }
@@ -147,7 +182,7 @@ void program() {
 	}
 	code[i] = NULL;
 }
-//“™†‚Æ•s“™†‚Ìƒm[ƒh‚ğì¬‚·‚éŠÖ”
+// ç­‰ã—ã„ã¨ä¸ç­‰ã—ã„ã®ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* equality() {
 	Node* node = relational();
 
@@ -160,7 +195,7 @@ Node* equality() {
 			return node;
 	}
 }
-//¬‚È‚è‚Æ‘å‚È‚è‚Ìƒm[ƒh‚ğì¬‚·‚éŠÖ”
+// å¤§ãªã‚Šã¨å°ãªã‚Šã®ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* relational() {
 	Node* node = add();
 	while (1) {
@@ -176,7 +211,7 @@ Node* relational() {
 			return node;
 	}
 }
-//‰ÁZ‚ÆŒ¸Z‚Ìƒm[ƒh‚ğì¬‚·‚éŠÖ”
+// åŠ ç®—ã¨æ¸›ç®—ã®ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* add() {
 	Node* node = mul();
 	while (1) {
@@ -192,7 +227,7 @@ Node* add() {
 	}
 	return node;
 }
-//æZ‚ÆœZ‚Ìƒm[ƒh‚ğì¬‚·‚éŠÖ”
+// ä¹—ç®—ã¨é™¤ç®—ã®ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* mul() {
 	Node* node = unary();
 	while (1) {
@@ -208,7 +243,7 @@ Node* mul() {
 	}
 	return node;
 }
-//”’l‚Ü‚½‚Í'('‚Ån‚Ü‚éƒm[ƒh‚ğì¬‚·‚éŠÖ”
+// æ•°å€¤ã¾ãŸã¯'('ã§å§‹ã¾ã‚‹ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* primary() {
 	if (consume("(")) {
 		Node* node = expr();
@@ -222,12 +257,24 @@ Node* primary() {
 	if (tok) {
 		Node* node = calloc(1, sizeof(Node));
 		node->kind = ND_LVAR;
-		node->offset = (tok->str[0] - 'a' + 1) * 8;//•Ï”–¼‚Ía‚©‚çz
+		
+		LVar* lvar = find_lvar(tok);
+		if (lvar) {
+			node->offset = lvar->offset;
+		} else {
+			lvar = calloc(1, sizeof(LVar));
+			lvar->next = locals;
+			lvar->name = tok->str;
+			lvar->len = tok->len;
+			lvar->offset = locals ? locals->offset + 8 : 8;
+			node->offset = lvar->offset;
+			locals = lvar;
+		}
 		return node;
 	}
-	error("no mach nodes");
+	error("no match nodes");
 }
-//’P€‰‰Zq‚Ìƒm[ƒh‚ğì¬‚·‚éŠÖ”
+// å˜é …æ¼”ç®—å­ã®ãƒãƒ¼ãƒ‰ã‚’ä½œæˆã™ã‚‹é–¢æ•°
 Node* unary() {
 	if (consume("+"))
 		return primary();

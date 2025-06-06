@@ -11,6 +11,14 @@ void gen_lval(Node* node) {
 
 void gen(Node* node) {
 	switch (node->kind) {
+	case ND_RETURN:
+		gen(node->lhs);
+		printf("	lw $t1, 0($sp)\n");
+		printf("	addi $sp, $sp, 4\n");
+		printf("	addi $a0, $t1, 0\n");
+		printf("	li $v0, 4001\n");
+		printf("	syscall\n");
+		return;
 	case ND_NUM:
 		printf("	li $t0, %d\n", node->val);
 		printf("	addi $sp,$sp, -4\n");
