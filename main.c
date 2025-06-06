@@ -3,6 +3,7 @@
 char* user_input; // 入力文字列
 Token* token; // 現在読んでいるtoken
 LVar* locals; // ローカル変数のリスト
+int label_count = 0; // ラベル生成用のカウンタ
 
 void error(char* fmt, ...) {
 	va_list ap;

@@ -17,6 +17,9 @@ typedef enum {
 	TK_NUM, // 整数
 	TK_IDENT, // 識別子
 	TK_RETURN, // return
+	TK_IF, // if
+	TK_WHILE, // while
+	TK_FOR, // for
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -45,6 +48,10 @@ typedef enum {
 	ND_ASSIGN, // 代入
 	ND_LVAR, // ローカル変数
 	ND_RETURN, // return文
+	ND_IF, // if文
+	ND_WHILE, // while文
+	ND_FOR, // for文
+	ND_BLOCK, // ブロック文
 } NodeKind;
 
 typedef struct Node Node;
@@ -54,6 +61,11 @@ struct Node {
 	NodeKind kind; // ノードの種類
 	Node* lhs; // 左辺
 	Node* rhs; // 右辺
+	Node* cond; // if文/while文/for文の条件
+	Node* then; // if文/while文/for文のthen/body節
+	Node* init; // for文の初期化
+	Node* inc; // for文のインクリメント
+	Node** body; // ブロック文の本体（文のリスト）
 	int val; // kindがND_NUMのときの数値
 	int offset; // kindがND_LVARのときのオフセット
 };
@@ -70,12 +82,16 @@ struct LVar {
 extern char* user_input; // 入力文字列
 extern Token* token; // 現在読んでいるtoken
 extern LVar* locals; // ローカル変数のリスト
+extern int label_count; // ラベル生成用のカウンタ
 
 // パーサ関連の関数
 Token* tokenize(char* p);
 Token* consume_ident();
 bool consume(char* op);
 bool consume_return();
+bool consume_if();
+bool consume_while();
+bool consume_for();
 void expect(char* op);
 int expect_number();
 bool at_eof();

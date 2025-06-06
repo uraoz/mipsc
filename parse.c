@@ -67,7 +67,7 @@ Token* tokenize(char* p) {
 			continue;
 		}
 		//一文字の記号
-		if (strchr("+-*/()<>;=", *p)) {
+		if (strchr("+-*/()<>;={}", *p)) {
 			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
@@ -81,6 +81,12 @@ Token* tokenize(char* p) {
 			int len = p - start;
 			if (len == 6 && !memcmp(start, "return", 6)) {
 				cur = new_token(TK_RETURN, cur, start, len);
+			} else if (len == 2 && !memcmp(start, "if", 2)) {
+				cur = new_token(TK_IF, cur, start, len);
+			} else if (len == 5 && !memcmp(start, "while", 5)) {
+				cur = new_token(TK_WHILE, cur, start, len);
+			} else if (len == 3 && !memcmp(start, "for", 3)) {
+				cur = new_token(TK_FOR, cur, start, len);
 			} else {
 				cur = new_token(TK_IDENT, cur, start, len);
 			}
@@ -119,6 +125,27 @@ bool consume_return() {
 	return true;
 }
 
+bool consume_if() {
+	if (token->kind != TK_IF)
+		return false;
+	token = token->next;
+	return true;
+}
+
+bool consume_while() {
+	if (token->kind != TK_WHILE)
+		return false;
+	token = token->next;
+	return true;
+}
+
+bool consume_for() {
+	if (token->kind != TK_FOR)
+		return false;
+	token = token->next;
+	return true;
+}
+
 
 // 新しいノードを作成する関数
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs) {
@@ -140,7 +167,7 @@ Node* new_node_num(int val) {
 // ノードのパーサ
 /*
 program    = stmt*
-stmt       = "return" expr ";" | expr ";"
+stmt       = "return" expr ";" | "if" "(" expr ")" stmt | "while" "(" expr ")" stmt | "for" "(" expr? ";" expr? ";" expr? ")" stmt | "{" stmt* "}" | expr ";"
 expr       = assign
 assign     = equality ("=" assign)?
 equality   = relational ("==" relational | "!=" relational)*
@@ -169,6 +196,66 @@ Node* stmt() {
 		node->kind = ND_RETURN;
 		node->lhs = expr();
 		expect(";");
+		return node;
+	}
+	if (consume_if()) {
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_IF;
+		expect("(");
+		node->cond = expr();
+		expect(")");
+		node->then = stmt();
+		return node;
+	}
+	if (consume_while()) {
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_WHILE;
+		expect("(");
+		node->cond = expr();
+		expect(")");
+		node->then = stmt();
+		return node;
+	}
+	if (consume_for()) {
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_FOR;
+		expect("(");
+		// 初期化部分（省略可能）
+		if (!consume(";")) {
+			node->init = expr();
+			expect(";");
+		}
+		// 条件部分（省略可能）
+		if (!consume(";")) {
+			node->cond = expr();
+			expect(";");
+		}
+		// インクリメント部分（省略可能）
+		if (!consume(")")) {
+			node->inc = expr();
+			expect(")");
+		}
+		node->then = stmt();
+		return node;
+	}
+	if (consume("{")) {
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_BLOCK;
+		// 文のリストを格納する配列を動的確保
+		Node** stmts = malloc(sizeof(Node*) * 100); // 最大100文
+		int i = 0;
+		while (!consume("}")) {
+			stmts[i++] = stmt();
+		}
+		stmts[i] = NULL; // 終端
+		node->body = stmts;
+		return node;
+	}
+	// 空文の処理
+	if (consume(";")) {
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_NUM;
+		node->val = 0;
 		return node;
 	}
 	node = expr();
