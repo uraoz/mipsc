@@ -1,10 +1,39 @@
 #include "mipsc.h"
 
+void gen_lval(Node* node) {
+	if (node->kind != ND_LVAR) {
+		error("not left node");
+	}
+	printf("	addi $t0, $fp, -%d\n", node->offset);
+	printf("	addi $sp, $sp, -4\n");
+	printf("	sw $t0, 0($sp)\n");
+}
+
 void gen(Node* node) {
-	if (node->kind == ND_NUM) {
+	switch (node->kind) {
+	case ND_NUM:
 		printf("	li $t0, %d\n", node->val);
 		printf("	addi $sp,$sp, -4\n");
 		printf("	sw $t0, 0($sp)\n");
+		return;
+	case ND_LVAR:
+		gen_lval(node);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addi $sp, $sp, 4\n");
+		printf("	lw $t0, 0($t0)\n");
+		printf("	addi $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	case ND_ASSIGN:
+		gen_lval(node->lhs);
+		gen(node->rhs);
+		printf("	lw $t1, 0($sp)\n");
+		printf("	addi $sp, $sp, 4\n");
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addi $sp, $sp, 4\n");
+		printf("	sw $t1, 0($t0)\n");
+		printf("	addi $sp, $sp, -4\n");
+		printf("	sw $t1, 0($sp)\n");
 		return;
 	}
 	gen(node->lhs);
@@ -14,6 +43,7 @@ void gen(Node* node) {
 	printf("	lw $t0, 0($sp)\n");
 	printf("	addi $sp, $sp, 4\n");
 	switch (node->kind) {
+	
 	case ND_ADD:
 		printf("	add $t0, $t1, $t0\n");
 		break;
@@ -39,8 +69,6 @@ void gen(Node* node) {
 	case ND_LE:
 		printf("	sle $t0, $t0, $t1\n");
 		break;
-	default:
-		error("•s³‚È‰‰Zq‚Å‚·");
 	}
 
 	printf("	addi $sp,$sp, -4\n");

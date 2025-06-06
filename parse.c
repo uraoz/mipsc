@@ -1,5 +1,6 @@
 #include "mipsc.h"
 
+Node* code[100];
 // 次のトークンを読み込んで期待したものか返す
 bool consume(char* op) {
 	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str, op, token->len))
@@ -11,14 +12,14 @@ bool consume(char* op) {
 // それ以外ではエラーを返す
 void expect(char* op) {
 	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str, op, token->len))
-		error("'%c'ではありません", op);
+		error("'%s'is expected but not", op);
 	token = token->next;
 }
 
 // 次のトークンが数値ならトークンを一つ読み進めてその数値を返す
 int expect_number() {
 	if (token->kind != TK_NUM)
-		error("数ではありません");
+		error("not a number");
 	int val = token->val;
 	token = token->next;
 	return val;
@@ -51,6 +52,7 @@ Token* tokenize(char* p) {
 			p++;
 			continue;
 		}
+		//数値
 		if (isdigit(*p)) {
 			cur = new_token(TK_NUM, cur, p, 0);
 			char* q = p;
@@ -59,7 +61,7 @@ Token* tokenize(char* p) {
 			continue;
 		}
 		//一文字の記号
-		if (strchr("+-*/()<>", *p)) {
+		if (strchr("+-*/()<>;", *p)) {
 			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
@@ -70,10 +72,24 @@ Token* tokenize(char* p) {
 			p += 2;
 			continue;
 		}
+		//1文字の変数
+		if ('a' <= *p && *p <= 'z') {
+			cur = new_token(TK_IDENT, cur, p, 1);
+			cur->len = 1;
+			p++;
+			continue;
+		}
 
 	}
 	new_token(TK_EOF, cur, p, 0);
 	return head.next;
+}
+Token* consume_ident() {
+	if (token->kind != TK_IDENT)
+		return NULL;
+	Token* tok = token;
+	token = token->next;
+	return tok;
 }
 
 
@@ -93,9 +109,43 @@ Node* new_node_num(int val) {
 	return node;
 }
 
+
 //ノードのパーサ
+/*
+program    = stmt*
+stmt       = expr ";"
+expr       = assign
+assign     = equality ("=" assign)?
+equality   = relational ("==" relational | "!=" relational)*
+relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+add        = mul ("+" mul | "-" mul)*
+mul        = unary ("*" unary | "/" unary)*
+unary      = ("+" | "-")? primary
+primary    = num | ident | "(" expr ")"
+*/
+
+//セミコロン区切りの式をパースする関数
+
+Node* assign() {
+	Node* node = equality();
+	if (consume("="))
+		node = new_node(ND_ASSIGN, node, assign());
+	return node;
+}
 Node* expr() {
-	return equality();
+	return assign();
+}
+Node* stmt() {
+	Node* node = expr();
+	expect(";");
+	return node;
+}
+void program() {
+	int i = 0;
+	while (!at_eof()) {
+		code[i++] = stmt();
+	}
+	code[i] = NULL;
 }
 //等号と不等号のノードを作成する関数
 Node* equality() {
@@ -168,7 +218,14 @@ Node* primary() {
 	if (token->kind == TK_NUM) {
 		return new_node_num(expect_number());
 	}
-	error("数値でも'('でもありません");
+	Token* tok = consume_ident();
+	if (tok) {
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_LVAR;
+		node->offset = (tok->str[0] - 'a' + 1) * 8;//変数名はaからz
+		return node;
+	}
+	error("no mach nodes");
 }
 //単項演算子のノードを作成する関数
 Node* unary() {
