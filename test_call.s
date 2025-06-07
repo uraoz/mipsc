@@ -8,7 +8,8 @@ __start:
 	addi $sp, $sp, -4096
 main:
 	addiu $sp, $sp, -8
-	sw $fp, 4($sp)
+	sw $ra, 4($sp)
+	sw $fp, 0($sp)
 	move $fp, $sp
 	li $t0, 42
 	addi $sp,$sp, -4
@@ -18,10 +19,3 @@ main:
 	move $a0, $v0
 	li $v0, 4001
 	syscall
-.L_func_end_main:
-	li $v0, 0
-	move $sp, $fp
-	lw $fp, 4($sp)
-	addiu $sp, $sp, 8
-	jr $ra
-	nop

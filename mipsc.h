@@ -20,6 +20,7 @@ typedef enum {
 	TK_IF, // if
 	TK_WHILE, // while
 	TK_FOR, // for
+	TK_INT, // int
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -52,6 +53,8 @@ typedef enum {
 	ND_WHILE, // while文
 	ND_FOR, // for文
 	ND_BLOCK, // ブロック文
+	ND_FUNC, // 関数定義
+	ND_CALL, // 関数呼び出し
 } NodeKind;
 
 typedef struct Node Node;
@@ -66,8 +69,11 @@ struct Node {
 	Node* init; // for文の初期化
 	Node* inc; // for文のインクリメント
 	Node** body; // ブロック文の本体（文のリスト）
+	Node** args; // 関数呼び出しの引数リスト
+	char* name; // 関数名
 	int val; // kindがND_NUMのときの数値
 	int offset; // kindがND_LVARのときのオフセット
+	int argc; // 引数の数
 };
 
 // 変数を管理する構造体
@@ -79,9 +85,22 @@ struct LVar {
 	int offset; // RBPからのオフセット
 };
 
+// 関数を管理する構造体
+typedef struct Function Function;
+struct Function {
+	Function* next; // 次の関数かNULL
+	char* name; // 関数名
+	int len; // 名前の長さ
+	Node* node; // 関数定義のノード
+	LVar* locals; // その関数のローカル変数
+};
+
 extern char* user_input; // 入力文字列
 extern Token* token; // 現在読んでいるtoken
 extern LVar* locals; // ローカル変数のリスト
+extern Function* functions; // 関数のリスト
+extern char* current_func_name; // 現在コード生成中の関数名
+extern int current_frame_size; // 現在の関数のフレームサイズ
 extern int label_count; // ラベル生成用のカウンタ
 
 // パーサ関連の関数
@@ -92,6 +111,7 @@ bool consume_return();
 bool consume_if();
 bool consume_while();
 bool consume_for();
+bool consume_int();
 void expect(char* op);
 int expect_number();
 bool at_eof();
@@ -108,6 +128,7 @@ extern Node* code[100];
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);
 Node* new_node_num(int val);
 LVar* find_lvar(Token* tok);
+Function* find_function(Token* tok);
 
 // コード生成関連の関数
 void gen(Node* node);

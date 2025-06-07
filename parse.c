@@ -87,6 +87,8 @@ Token* tokenize(char* p) {
 				cur = new_token(TK_WHILE, cur, start, len);
 			} else if (len == 3 && !memcmp(start, "for", 3)) {
 				cur = new_token(TK_FOR, cur, start, len);
+			} else if (len == 3 && !memcmp(start, "int", 3)) {
+				cur = new_token(TK_INT, cur, start, len);
 			} else {
 				cur = new_token(TK_IDENT, cur, start, len);
 			}
@@ -141,6 +143,13 @@ bool consume_while() {
 
 bool consume_for() {
 	if (token->kind != TK_FOR)
+		return false;
+	token = token->next;
+	return true;
+}
+
+bool consume_int() {
+	if (token->kind != TK_INT)
 		return false;
 	token = token->next;
 	return true;
@@ -262,10 +271,89 @@ Node* stmt() {
 	expect(";");
 	return node;
 }
+// 関数定義をパースする
+Node* function() {
+	// int functionname(params) { ... } の形式をパース
+	if (!consume_int()) {
+		error("function must start with 'int'");
+	}
+	
+	Token* tok = consume_ident();
+	if (!tok) {
+		error("function name expected");
+	}
+	
+	// 関数名をコピー
+	char* fname = calloc(tok->len + 1, sizeof(char));
+	memcpy(fname, tok->str, tok->len);
+	
+	expect("(");
+	
+	// 引数の解析（パラメータ）
+	LVar* params = NULL;
+	int argc = 0;
+	if (!consume(")")) {
+		do {
+			if (!consume_int()) {
+				error("parameter must be int");
+			}
+			Token* param_tok = consume_ident();
+			if (!param_tok) {
+				error("parameter name expected");
+			}
+			
+			// パラメータをローカル変数リストに追加
+			LVar* param = calloc(1, sizeof(LVar));
+			param->next = params;
+			param->name = param_tok->str;
+			param->len = param_tok->len;
+			param->offset = 8 + argc * 4; // 引数は$fp+8から
+			params = param;
+			argc++;
+		} while (consume(","));
+		expect(")");
+	}
+	
+	expect("{");
+	
+	// この関数のローカル変数を設定
+	LVar* saved_locals = locals;
+	locals = params;
+	
+	// 関数ノードを作成
+	Node* node = calloc(1, sizeof(Node));
+	node->kind = ND_FUNC;
+	node->name = fname;
+	node->argc = argc;
+	
+	// 文のリストを格納する配列を動的確保
+	Node** stmts = malloc(sizeof(Node*) * 100); // 最大100文
+	int i = 0;
+	while (!consume("}")) {
+		stmts[i++] = stmt();
+	}
+	stmts[i] = NULL; // 終端
+	node->body = stmts;
+	
+	// 関数をリストに追加
+	Function* func = calloc(1, sizeof(Function));
+	func->next = functions;
+	func->name = fname;
+	func->len = strlen(fname);
+	func->node = node;
+	func->locals = locals;
+	functions = func;
+	
+	// ローカル変数を復元
+	locals = saved_locals;
+	
+	return node;
+}
+
 void program() {
 	int i = 0;
 	while (!at_eof()) {
-		code[i++] = stmt();
+		code[i++] = function();
 	}
 	code[i] = NULL;
 }
@@ -342,6 +430,33 @@ Node* primary() {
 	}
 	Token* tok = consume_ident();
 	if (tok) {
+		// 関数呼び出しかチェック
+		if (consume("(")) {
+			Node* node = calloc(1, sizeof(Node));
+			node->kind = ND_CALL;
+			
+			// 関数名をコピー
+			char* fname = calloc(tok->len + 1, sizeof(char));
+			memcpy(fname, tok->str, tok->len);
+			node->name = fname;
+			
+			// 引数の解析
+			Node** args = malloc(sizeof(Node*) * 10); // 最大10引数
+			int argc = 0;
+			if (!consume(")")) {
+				do {
+					args[argc++] = expr();
+				} while (consume(","));
+				expect(")");
+			}
+			args[argc] = NULL;
+			node->args = args;
+			node->argc = argc;
+			
+			return node;
+		}
+		
+		// 変数参照
 		Node* node = calloc(1, sizeof(Node));
 		node->kind = ND_LVAR;
 		
@@ -353,7 +468,14 @@ Node* primary() {
 			lvar->next = locals;
 			lvar->name = tok->str;
 			lvar->len = tok->len;
-			lvar->offset = locals ? locals->offset + 8 : 8;
+			// ローカル変数は負のオフセット（引数と区別するため）
+			int min_offset = 0;
+			for (LVar* v = locals; v; v = v->next) {
+				if (v->offset < min_offset) {
+					min_offset = v->offset;
+				}
+			}
+			lvar->offset = min_offset - 4;
 			node->offset = lvar->offset;
 			locals = lvar;
 		}
