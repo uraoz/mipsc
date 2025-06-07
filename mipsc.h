@@ -21,6 +21,8 @@ typedef enum {
 	TK_WHILE, // while
 	TK_FOR, // for
 	TK_INT, // int
+	TK_CHAR, // char
+	TK_SIZEOF, // sizeof
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -48,6 +50,7 @@ typedef enum {
 	ND_LE, // 小さいか等しい
 	ND_ASSIGN, // 代入
 	ND_LVAR, // ローカル変数
+	ND_GVAR, // グローバル変数
 	ND_RETURN, // return文
 	ND_IF, // if文
 	ND_WHILE, // while文
@@ -55,7 +58,26 @@ typedef enum {
 	ND_BLOCK, // ブロック文
 	ND_FUNC, // 関数定義
 	ND_CALL, // 関数呼び出し
+	ND_ADDR, // アドレス演算子 &
+	ND_DEREF, // 間接参照演算子 *
+	ND_SIZEOF, // sizeof演算子
 } NodeKind;
+
+// 型の種類を表すenum
+typedef enum {
+	TY_INT,   // int型
+	TY_PTR,   // ポインタ型
+	TY_CHAR,  // char型
+	TY_ARRAY, // 配列型
+} TypeKind;
+
+// 型を表す構造体
+typedef struct Type Type;
+struct Type {
+	TypeKind ty;      // 型の種類
+	Type* ptr_to;     // ポインタが指す型（ポインタ型の場合のみ）
+	size_t array_size; // 配列のサイズ（配列型の場合のみ）
+};
 
 typedef struct Node Node;
 
@@ -74,6 +96,7 @@ struct Node {
 	int val; // kindがND_NUMのときの数値
 	int offset; // kindがND_LVARのときのオフセット
 	int argc; // 引数の数
+	Type* type; // ノードの型情報
 };
 
 // 変数を管理する構造体
@@ -83,6 +106,16 @@ struct LVar {
 	char* name; // 変数の名前
 	int len;    // 名前の長さ
 	int offset; // RBPからのオフセット
+	Type* type; // 変数の型情報
+};
+
+// グローバル変数を管理する構造体
+typedef struct GVar GVar;
+struct GVar {
+	GVar* next; // 次のグローバル変数かNULL
+	char* name; // 変数の名前
+	int len;    // 名前の長さ
+	Type* type; // 変数の型情報
 };
 
 // 関数を管理する構造体
@@ -98,6 +131,7 @@ struct Function {
 extern char* user_input; // 入力文字列
 extern Token* token; // 現在読んでいるtoken
 extern LVar* locals; // ローカル変数のリスト
+extern GVar* globals; // グローバル変数のリスト
 extern Function* functions; // 関数のリスト
 extern char* current_func_name; // 現在コード生成中の関数名
 extern int current_frame_size; // 現在の関数のフレームサイズ
@@ -112,6 +146,8 @@ bool consume_if();
 bool consume_while();
 bool consume_for();
 bool consume_int();
+bool consume_char();
+bool consume_sizeof();
 void expect(char* op);
 int expect_number();
 bool at_eof();
@@ -128,7 +164,18 @@ extern Node* code[100];
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);
 Node* new_node_num(int val);
 LVar* find_lvar(Token* tok);
+GVar* find_gvar(Token* tok);
 Function* find_function(Token* tok);
+Type* parse_type_prefix();
+
+// 型管理関連の関数
+Type* new_type(TypeKind ty);
+Type* pointer_to(Type* base);
+Type* array_to(Type* base, size_t size);
+bool is_integer(Type* ty);
+int size_of(Type* ty);
+Type* parse_type();
+Type* get_type(Node* node);
 
 // コード生成関連の関数
 void gen(Node* node);

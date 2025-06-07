@@ -1,6 +1,45 @@
 #include "mipsc.h"
 
 Node* code[100];
+
+// 型管理関数の実装
+Type* new_type(TypeKind ty) {
+	Type* type = calloc(1, sizeof(Type));
+	type->ty = ty;
+	return type;
+}
+
+Type* pointer_to(Type* base) {
+	Type* type = new_type(TY_PTR);
+	type->ptr_to = base;
+	return type;
+}
+
+Type* array_to(Type* base, size_t size) {
+	Type* type = new_type(TY_ARRAY);
+	type->ptr_to = base;
+	type->array_size = size;
+	return type;
+}
+
+bool is_integer(Type* ty) {
+	return ty->ty == TY_INT || ty->ty == TY_CHAR;
+}
+
+int size_of(Type* ty) {
+	switch (ty->ty) {
+	case TY_INT:
+	case TY_PTR:
+		return 4; // MIPS32では4バイト
+	case TY_CHAR:
+		return 1;
+	case TY_ARRAY:
+		// 配列のサイズ = 要素の型のサイズ × 要素数
+		return size_of(ty->ptr_to) * ty->array_size;
+	default:
+		return 4;
+	}
+}
 // 次のトークンが期待される記号であればトークンを読み進める
 bool consume(char* op) {
 	if (token->kind != TK_RESERVED || token->len != strlen(op) || memcmp(token->str, op, token->len))
@@ -67,7 +106,7 @@ Token* tokenize(char* p) {
 			continue;
 		}
 		//一文字の記号
-		if (strchr("+-*/()<>;={},", *p)) {
+		if (strchr("+-*/()<>;={},&[]", *p)) {
 			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
@@ -89,6 +128,10 @@ Token* tokenize(char* p) {
 				cur = new_token(TK_FOR, cur, start, len);
 			} else if (len == 3 && !memcmp(start, "int", 3)) {
 				cur = new_token(TK_INT, cur, start, len);
+			} else if (len == 4 && !memcmp(start, "char", 4)) {
+				cur = new_token(TK_CHAR, cur, start, len);
+			} else if (len == 6 && !memcmp(start, "sizeof", 6)) {
+				cur = new_token(TK_SIZEOF, cur, start, len);
 			} else {
 				cur = new_token(TK_IDENT, cur, start, len);
 			}
@@ -105,6 +148,16 @@ Token* tokenize(char* p) {
 // 変数を名前で検索する。見つからなかった場合はNULLを返す。
 LVar* find_lvar(Token* tok) {
 	for (LVar* var = locals; var; var = var->next) {
+		if (var->len == tok->len && !memcmp(tok->str, var->name, var->len)) {
+			return var;
+		}
+	}
+	return NULL;
+}
+
+// グローバル変数を名前で検索する。見つからなかった場合はNULLを返す。
+GVar* find_gvar(Token* tok) {
+	for (GVar* var = globals; var; var = var->next) {
 		if (var->len == tok->len && !memcmp(tok->str, var->name, var->len)) {
 			return var;
 		}
@@ -155,6 +208,101 @@ bool consume_int() {
 	return true;
 }
 
+bool consume_char() {
+	if (token->kind != TK_CHAR)
+		return false;
+	token = token->next;
+	return true;
+}
+
+bool consume_sizeof() {
+	if (token->kind != TK_SIZEOF)
+		return false;
+	token = token->next;
+	return true;
+}
+
+// 型をパースする関数（int, char, int*, int**, etc.）
+Type* parse_type() {
+	Type* base_type;
+	
+	if (consume_int()) {
+		base_type = new_type(TY_INT);
+	} else if (consume_char()) {
+		base_type = new_type(TY_CHAR);
+	} else {
+		error("type expected");
+	}
+	
+	// ポインタレベルをカウント（*, **, *** など）
+	while (consume("*")) {
+		base_type = pointer_to(base_type);
+	}
+	
+	return base_type;
+}
+
+// 型の前半部分（int, char, など）をパースする。ポインタの*はパースしない。
+Type* parse_type_prefix() {
+	Type* base_type;
+	
+	if (consume_int()) {
+		base_type = new_type(TY_INT);
+	} else if (consume_char()) {
+		base_type = new_type(TY_CHAR);
+	} else {
+		error("type expected");
+	}
+	
+	return base_type;
+}
+
+// ノードから型を推定する関数
+Type* get_type(Node* node) {
+	switch (node->kind) {
+	case ND_NUM:
+		return new_type(TY_INT);
+	case ND_LVAR: {
+		// 変数の型を検索
+		for (LVar* var = locals; var; var = var->next) {
+			if (var->offset == node->offset) {
+				return var->type;
+			}
+		}
+		return new_type(TY_INT);  // デフォルト
+	}
+	case ND_GVAR: {
+		// グローバル変数の型を検索
+		for (GVar* var = globals; var; var = var->next) {
+			if (strcmp(var->name, node->name) == 0) {
+				return var->type;
+			}
+		}
+		return new_type(TY_INT);  // デフォルト
+	}
+	case ND_ADDR: {
+		// &expr の型は expr* 
+		Type* base = get_type(node->lhs);
+		return pointer_to(base);
+	}
+	case ND_DEREF: {
+		// *ptr の型は ptr が指す型
+		Type* ptr_type = get_type(node->lhs);
+		if (ptr_type->ty == TY_PTR) {
+			return ptr_type->ptr_to;
+		}
+		return new_type(TY_INT);  // エラーの場合
+	}
+	case ND_ADD:
+	case ND_SUB:
+	case ND_MUL:
+	case ND_DIV:
+		return new_type(TY_INT);  // 算術演算の結果はint
+	default:
+		return new_type(TY_INT);  // デフォルト
+	}
+}
+
 
 // 新しいノードを作成する関数
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs) {
@@ -200,11 +348,19 @@ Node* expr() {
 }
 Node* stmt() {
 	Node* node;
-	if (consume_int()) {
-		// 変数宣言: int varname;
+	if (token->kind == TK_INT || token->kind == TK_CHAR) {
+		// 変数宣言: int varname; int* ptr; char* str; int arr[10]; など
+		Type* type = parse_type();
 		Token* tok = consume_ident();
 		if (!tok) {
 			error("variable name expected");
+		}
+		
+		// 配列宣言のチェック: int name[size]
+		if (consume("[")) {
+			int array_size = expect_number();
+			expect("]");
+			type = array_to(type, array_size);
 		}
 		
 		// 新しい変数をローカル変数リストに追加
@@ -212,15 +368,19 @@ Node* stmt() {
 		lvar->next = locals;
 		lvar->name = tok->str;
 		lvar->len = tok->len;
+		lvar->type = type;
 		
-		// 現在の関数のローカル変数のオフセットを計算（負のオフセットで配置）
+		// 現在の関数のローカル変数のオフセットを計算（型のサイズを考慮）
 		int min_offset = -8;  // 引数保存領域の下から開始
 		for (LVar* v = locals; v; v = v->next) {
 			if (v->offset < min_offset) {
 				min_offset = v->offset;
 			}
 		}
-		lvar->offset = min_offset - 4;
+		// 型のサイズでアライメント調整（とりあえず4バイト境界）
+		int var_size = size_of(type);
+		if (var_size < 4) var_size = 4; // 最小4バイトでアライメント
+		lvar->offset = min_offset - var_size;
 		locals = lvar;
 		
 		expect(";");
@@ -304,10 +464,8 @@ Node* stmt() {
 }
 // 関数定義をパースする
 Node* function() {
-	// int functionname(params) { ... } の形式をパース
-	if (!consume_int()) {
-		error("function must start with 'int'");
-	}
+	// 型 functionname(params) { ... } の形式をパース
+	Type* return_type = parse_type();
 	
 	Token* tok = consume_ident();
 	if (!tok) {
@@ -325,9 +483,7 @@ Node* function() {
 	int argc = 0;
 	if (!consume(")")) {
 		do {
-			if (!consume_int()) {
-				error("parameter must be int");
-			}
+			Type* param_type = parse_type();
 			Token* param_tok = consume_ident();
 			if (!param_tok) {
 				error("parameter name expected");
@@ -338,6 +494,7 @@ Node* function() {
 			param->next = params;
 			param->name = param_tok->str;
 			param->len = param_tok->len;
+			param->type = param_type;
 			param->offset = -8 - (argc + 1) * 4; // 引数は$s8の下の領域に
 			params = param;
 			argc++;
@@ -384,7 +541,48 @@ Node* function() {
 void program() {
 	int i = 0;
 	while (!at_eof()) {
-		code[i++] = function();
+		// 型プレフィックスを先読み
+		Token* saved_token = token;
+		Type* type_prefix = parse_type_prefix();
+		
+		// ポインタレベルをカウント
+		while (consume("*")) {
+			type_prefix = pointer_to(type_prefix);
+		}
+		
+		// 識別子を読む
+		Token* name_tok = consume_ident();
+		if (!name_tok) {
+			error("identifier expected");
+		}
+		
+		// 次のトークンで関数か変数かを判定
+		if (consume("(")) {
+			// 関数定義 - トークンを元に戻して関数パースを呼ぶ
+			token = saved_token;
+			code[i++] = function();
+		} else {
+			// グローバル変数宣言
+			Type* var_type = type_prefix;
+			
+			// 配列宣言のチェック: int name[size]
+			if (consume("[")) {
+				int array_size = expect_number();
+				expect("]");
+				var_type = array_to(var_type, array_size);
+			}
+			
+			// グローバル変数をリストに追加
+			GVar* gvar = calloc(1, sizeof(GVar));
+			gvar->next = globals;
+			gvar->name = calloc(name_tok->len + 1, sizeof(char));
+			memcpy(gvar->name, name_tok->str, name_tok->len);
+			gvar->len = name_tok->len;
+			gvar->type = var_type;
+			globals = gvar;
+			
+			expect(";");
+		}
 	}
 	code[i] = NULL;
 }
@@ -451,6 +649,26 @@ Node* mul() {
 }
 // 数値または'('で始まるノードを作成する関数
 Node* primary() {
+	if (consume_sizeof()) {
+		expect("(");
+		
+		// sizeof(型) の場合
+		if (token->kind == TK_INT || token->kind == TK_CHAR) {
+			Type* ty = parse_type();
+			expect(")");
+			
+			// 型のサイズを定数ノードとして返す
+			return new_node_num(size_of(ty));
+		}
+		
+		// sizeof(式) の場合
+		Node* node = expr();
+		expect(")");
+		
+		// 式の型からサイズを計算
+		Type* ty = get_type(node);
+		return new_node_num(size_of(ty));
+	}
 	if (consume("(")) {
 		Node* node = expr();
 		expect(")");
@@ -487,16 +705,38 @@ Node* primary() {
 			return node;
 		}
 		
-		// 変数参照
+		// 変数参照 - ローカル変数を優先、次にグローバル変数
 		Node* node = calloc(1, sizeof(Node));
-		node->kind = ND_LVAR;
 		
 		LVar* lvar = find_lvar(tok);
 		if (lvar) {
+			// ローカル変数が見つかった
+			node->kind = ND_LVAR;
 			node->offset = lvar->offset;
 		} else {
-			error("undefined variable");
+			// ローカル変数にない場合、グローバル変数を探す
+			GVar* gvar = find_gvar(tok);
+			if (gvar) {
+				node->kind = ND_GVAR;
+				// グローバル変数名をコピー
+				char* gname = calloc(tok->len + 1, sizeof(char));
+				memcpy(gname, tok->str, tok->len);
+				node->name = gname;
+			} else {
+				error("undefined variable");
+			}
 		}
+		
+		// 配列インデックス arr[i] を *(arr + i) に変換
+		while (consume("[")) {
+			Node* index = expr();
+			expect("]");
+			
+			// arr[i] を *(arr + i) に変換
+			Node* add_node = new_node(ND_ADD, node, index);
+			node = new_node(ND_DEREF, add_node, NULL);
+		}
+		
 		return node;
 	}
 	error("no match nodes");
@@ -507,5 +747,17 @@ Node* unary() {
 		return primary();
 	if (consume("-"))
 		return new_node(ND_SUB, new_node_num(0), primary());
+	if (consume("&")) {
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_ADDR;
+		node->lhs = unary();
+		return node;
+	}
+	if (consume("*")) {
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_DEREF;
+		node->lhs = unary();
+		return node;
+	}
 	return primary();
 }

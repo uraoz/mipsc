@@ -1,12 +1,26 @@
 #include "mipsc.h"
 
 void gen_lval(Node* node) {
-	if (node->kind != ND_LVAR) {
-		error("not left node");
+	switch (node->kind) {
+	case ND_LVAR:
+		// 変数のアドレスを計算
+		printf("	addiu $t0, $s8, %d\n", node->offset);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	case ND_GVAR:
+		// グローバル変数のアドレスを計算
+		printf("	la $t0, %s\n", node->name);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	case ND_DEREF:
+		// *ptr の左辺値は ptr の値（アドレス）
+		gen(node->lhs);
+		return;
+	default:
+		error("not left value");
 	}
-	printf("	addi $t0, $s8, %d\n", node->offset);
-	printf("	addi $sp, $sp, -4\n");
-	printf("	sw $t0, 0($sp)\n");
 }
 
 void gen(Node* node) {
@@ -25,6 +39,12 @@ void gen(Node* node) {
 				func = f;
 				break;
 			}
+		}
+		
+		// 現在の関数のローカル変数を設定
+		LVar* saved_locals = locals;
+		if (func) {
+			locals = func->locals;
 		}
 		
 		// ローカル変数のサイズ計算
@@ -102,6 +122,9 @@ void gen(Node* node) {
 			printf("	jr $ra\n");
 			printf("	nop\n");
 		}
+		
+		// ローカル変数を復元
+		locals = saved_locals;
 		return;
 	}
 	case ND_CALL: {
@@ -205,12 +228,52 @@ void gen(Node* node) {
 		printf("	addiu $sp, $sp, -4\n");
 		printf("	sw $t0, 0($sp)\n");
 		return;
-	case ND_LVAR:
-		// フレームポインタからの相対オフセットで読み込み
-		printf("	lw $t0, %d($s8)\n", node->offset);
-		printf("	addiu $sp, $sp, -4\n");
-		printf("	sw $t0, 0($sp)\n");
+	case ND_LVAR: {
+		// 変数の型を確認して配列かどうか判定
+		LVar* var = NULL;
+		for (LVar* v = locals; v; v = v->next) {
+			if (v->offset == node->offset) {
+				var = v;
+				break;
+			}
+		}
+		
+		if (var && var->type->ty == TY_ARRAY) {
+			// 配列の場合はアドレス（配列→ポインタ変換）
+			printf("	addiu $t0, $s8, %d\n", node->offset);
+			printf("	addiu $sp, $sp, -4\n");
+			printf("	sw $t0, 0($sp)\n");
+		} else {
+			// 通常の変数の場合は値を読み込み
+			printf("	lw $t0, %d($s8)\n", node->offset);
+			printf("	addiu $sp, $sp, -4\n");
+			printf("	sw $t0, 0($sp)\n");
+		}
 		return;
+	}
+	case ND_GVAR: {
+		// グローバル変数の型を確認して配列かどうか判定
+		GVar* var = NULL;
+		for (GVar* v = globals; v; v = v->next) {
+			if (strcmp(v->name, node->name) == 0) {
+				var = v;
+				break;
+			}
+		}
+		
+		if (var && var->type->ty == TY_ARRAY) {
+			// 配列の場合はアドレス（配列→ポインタ変換）
+			printf("	la $t0, %s\n", node->name);
+			printf("	addiu $sp, $sp, -4\n");
+			printf("	sw $t0, 0($sp)\n");
+		} else {
+			// 通常の変数の場合は値を読み込み
+			printf("	lw $t0, %s\n", node->name);
+			printf("	addiu $sp, $sp, -4\n");
+			printf("	sw $t0, 0($sp)\n");
+		}
+		return;
+	}
 	case ND_ASSIGN:
 		gen_lval(node->lhs);
 		gen(node->rhs);
@@ -221,6 +284,17 @@ void gen(Node* node) {
 		printf("	sw $t1, 0($t0)\n");
 		printf("	addiu $sp, $sp, -4\n");
 		printf("	sw $t1, 0($sp)\n");
+		return;
+	case ND_ADDR:
+		// &variable: 変数のアドレスをスタックにプッシュ
+		gen_lval(node->lhs);
+		return;
+	case ND_DEREF:
+		// *ptr: ポインタが指す値をロード
+		gen(node->lhs);  // ポインタの値（アドレス）を取得
+		printf("	lw $t0, 0($sp)\n");        // アドレスを$t0に取得
+		printf("	lw $t0, 0($t0)\n");        // そのアドレスの内容を$t0に取得
+		printf("	sw $t0, 0($sp)\n");        // 結果をスタックに格納
 		return;
 	}
 	
@@ -233,9 +307,30 @@ void gen(Node* node) {
 	printf("	addiu $sp, $sp, 4\n");
 	
 	switch (node->kind) {
-	case ND_ADD:
+	case ND_ADD: {
+		// ポインタ演算のチェック
+		Type* left_type = get_type(node->lhs);
+		Type* right_type = get_type(node->rhs);
+		
+		if (left_type->ty == TY_PTR || left_type->ty == TY_ARRAY) {
+			// 左がポインタ/配列: ptr + int => ptr + (int * sizeof(pointee))
+			int elem_size = size_of(left_type->ptr_to);
+			if (elem_size > 1) {
+				printf("	li $t2, %d\n", elem_size);
+				printf("	mul $t1, $t1, $t2\n");
+			}
+		} else if (right_type->ty == TY_PTR || right_type->ty == TY_ARRAY) {
+			// 右がポインタ/配列: int + ptr => (int * sizeof(pointee)) + ptr
+			int elem_size = size_of(right_type->ptr_to);
+			if (elem_size > 1) {
+				printf("	li $t2, %d\n", elem_size);
+				printf("	mul $t0, $t0, $t2\n");
+			}
+		}
+		
 		printf("	add $t0, $t0, $t1\n");
 		break;
+	}
 	case ND_SUB:
 		printf("	sub $t0, $t0, $t1\n");
 		break;

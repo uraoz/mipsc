@@ -3,6 +3,7 @@
 char* user_input; // 入力文字列
 Token* token; // 現在読んでいるtoken
 LVar* locals; // ローカル変数のリスト
+GVar* globals; // グローバル変数のリスト
 Function* functions; // 関数のリスト
 char* current_func_name; // 現在コード生成中の関数名
 int current_frame_size; // 現在の関数のフレームサイズ
@@ -36,6 +37,7 @@ int main(int argc, char** argv) {
 	user_input = argv[1];
 	token = tokenize(user_input);
 	locals = NULL;
+	globals = NULL;
 	functions = NULL;
 	current_func_name = NULL;
 	program();
@@ -43,6 +45,11 @@ int main(int argc, char** argv) {
 	// アセンブリの前半部を出力
 	printf(".data\n");
 	printf("stack: .space 4096\n");
+	
+	// グローバル変数を出力
+	for (GVar* var = globals; var; var = var->next) {
+		printf("%s: .space %d\n", var->name, size_of(var->type));
+	}
 	printf(".text\n");
 	printf(".globl main\n");
 	printf(".globl __start\n");
