@@ -37,10 +37,10 @@ void gen(Node* node) {
 			}
 		}
 		
-		// スタックフレームサイズ計算（8バイトアライメント）
-		// 戻りアドレス(4) + フレームポインタ(4) + ローカル変数 + パディング
-		int arg_size = node->argc > 0 ? node->argc * 4 : 0;
-		int frame_size = 8 + local_size + arg_size;
+		// MIPS ABI準拠のスタックフレームサイズ計算
+		// レイアウト: [$ra, $s8, 引数領域, ローカル変数領域]（すべて$s8からの正のオフセット）
+		int arg_save_size = node->argc > 0 ? node->argc * 4 : 0;
+		int frame_size = 8 + arg_save_size + local_size;  // $ra(4) + $s8(4) + 引数 + ローカル変数
 		if (frame_size % 8 != 0) {
 			frame_size = ((frame_size + 7) / 8) * 8;
 		}
@@ -48,16 +48,31 @@ void gen(Node* node) {
 		
 		// 統一された関数プロローグ
 		printf("	addiu $sp, $sp, -%d\n", frame_size);
-		printf("	sw $ra, 0($sp)\n");
-		printf("	sw $s8, 4($sp)\n");
-		printf("	move $s8, $sp\n");
+		printf("	sw $ra, %d($sp)\n", frame_size - 4);  // フレーム最上部に$ra
+		printf("	sw $s8, %d($sp)\n", frame_size - 8);  // その下に$s8
+		printf("	addiu $s8, $sp, %d\n", frame_size - 8);  // $s8をフレームポインタ基準に
 		
-		// 引数をローカル領域に保存
+		// 引数をローカル領域に保存（$s8からの正のオフセット）
 		if (node->argc > 0) {
 			for (int i = 0; i < node->argc && i < 4; i++) {
-				printf("	sw $a%d, %d($s8)\n", i, 8 + i * 4);
+				printf("	sw $a%d, %d($s8)\n", i, -8 - (i + 1) * 4);  // 引数を$s8の下に配置
 			}
 		}
+		
+		// ローカル変数領域を0クリア（コメントアウト）
+		/*
+		if (local_size > 0) {
+			// 負のオフセットでローカル変数にアクセスするため、スタックをクリア
+			printf("	li $t9, %d\n", local_size);
+			printf(".L_clear_loop_%s:\n", node->name);
+			printf("	beq $t9, $zero, .L_clear_end_%s\n", node->name);
+			printf("	sub $t8, $s8, $t9\n");
+			printf("	sw $zero, 0($t8)\n");
+			printf("	addiu $t9, $t9, -4\n");
+			printf("	j .L_clear_loop_%s\n", node->name);
+			printf(".L_clear_end_%s:\n", node->name);
+		}
+		*/
 		
 		// 関数本体の実行
 		bool has_return = false;
@@ -81,9 +96,8 @@ void gen(Node* node) {
 		if (!has_return) {
 			printf(".L_func_end_%s:\n", node->name);
 			printf("	li $v0, 0\n");
-			printf("	move $sp, $s8\n");
-			printf("	lw $ra, 0($sp)\n");
-			printf("	lw $s8, 4($sp)\n");
+			printf("	lw $ra, %d($s8)\n", 4);  // $s8+4から$ra復元
+			printf("	lw $s8, 0($s8)\n");      // $s8+0から旧$s8復元
 			printf("	addiu $sp, $sp, %d\n", current_frame_size);
 			printf("	jr $ra\n");
 			printf("	nop\n");
@@ -179,18 +193,11 @@ void gen(Node* node) {
 		printf("	addiu $sp, $sp, 4\n");
 		
 		// 統一された関数エピローグ
-		printf("	move $sp, $s8\n");
-		printf("	lw $ra, 0($sp)\n");
-		printf("	lw $s8, 4($sp)\n");
+		printf("	lw $ra, %d($s8)\n", 4);  // $s8+4から$ra復元
+		printf("	lw $s8, 0($s8)\n");      // $s8+0から旧$s8復元
 		printf("	addiu $sp, $sp, %d\n", current_frame_size);
-		if (current_func_name && strcmp(current_func_name, "main") == 0) {
-			printf("	move $a0, $v0\n");
-			printf("	li $v0, 4001\n");
-			printf("	syscall\n");
-		} else {
-			printf("	jr $ra\n");
-			printf("	nop\n");
-		}
+		printf("	jr $ra\n");
+		printf("	nop\n");
 		return;
 	}
 	case ND_NUM:

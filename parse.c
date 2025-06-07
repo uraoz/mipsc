@@ -200,6 +200,37 @@ Node* expr() {
 }
 Node* stmt() {
 	Node* node;
+	if (consume_int()) {
+		// 変数宣言: int varname;
+		Token* tok = consume_ident();
+		if (!tok) {
+			error("variable name expected");
+		}
+		
+		// 新しい変数をローカル変数リストに追加
+		LVar* lvar = calloc(1, sizeof(LVar));
+		lvar->next = locals;
+		lvar->name = tok->str;
+		lvar->len = tok->len;
+		
+		// 現在の関数のローカル変数のオフセットを計算（負のオフセットで配置）
+		int min_offset = -8;  // 引数保存領域の下から開始
+		for (LVar* v = locals; v; v = v->next) {
+			if (v->offset < min_offset) {
+				min_offset = v->offset;
+			}
+		}
+		lvar->offset = min_offset - 4;
+		locals = lvar;
+		
+		expect(";");
+		
+		// 空のノードを返す（宣言は実行時に何もしない）
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_NUM;
+		node->val = 0;
+		return node;
+	}
 	if (consume_return()) {
 		node = calloc(1, sizeof(Node));
 		node->kind = ND_RETURN;
@@ -307,7 +338,7 @@ Node* function() {
 			param->next = params;
 			param->name = param_tok->str;
 			param->len = param_tok->len;
-			param->offset = 8 + argc * 4; // 引数は$fp+8から
+			param->offset = -8 - (argc + 1) * 4; // 引数は$s8の下の領域に
 			params = param;
 			argc++;
 		} while (consume(","));
@@ -464,20 +495,7 @@ Node* primary() {
 		if (lvar) {
 			node->offset = lvar->offset;
 		} else {
-			lvar = calloc(1, sizeof(LVar));
-			lvar->next = locals;
-			lvar->name = tok->str;
-			lvar->len = tok->len;
-			// ローカル変数は負のオフセット（引数と区別するため）
-			int min_offset = 0;
-			for (LVar* v = locals; v; v = v->next) {
-				if (v->offset < min_offset) {
-					min_offset = v->offset;
-				}
-			}
-			lvar->offset = min_offset - 4;
-			node->offset = lvar->offset;
-			locals = lvar;
+			error("undefined variable");
 		}
 		return node;
 	}

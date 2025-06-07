@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
 	printf("	addi $sp, $sp, -4096\n");
 	printf("	jal main\n");
 	printf("	nop\n");
+	printf("	move $a0, $v0\n");
 	printf("	li $v0, 4001\n");
 	printf("	syscall\n");
 	
