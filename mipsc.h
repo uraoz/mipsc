@@ -10,12 +10,14 @@
 
 void error(char* fmt, ...);
 void error_at(char* loc, char* fmt, ...);
+char* read_file(char* path);
 
 // トークンの種類を表すenum
 typedef enum {
 	TK_RESERVED, // 記号
 	TK_NUM, // 整数
 	TK_IDENT, // 識別子
+	TK_STR, // 文字列リテラル
 	TK_RETURN, // return
 	TK_IF, // if
 	TK_WHILE, // while
@@ -61,6 +63,7 @@ typedef enum {
 	ND_ADDR, // アドレス演算子 &
 	ND_DEREF, // 間接参照演算子 *
 	ND_SIZEOF, // sizeof演算子
+	ND_STR, // 文字列リテラル
 } NodeKind;
 
 // 型の種類を表すenum
@@ -97,6 +100,17 @@ struct Node {
 	int offset; // kindがND_LVARのときのオフセット
 	int argc; // 引数の数
 	Type* type; // ノードの型情報
+	char* str; // kindがND_STRのときの文字列データ
+	int str_len; // kindがND_STRのときの文字列の長さ
+};
+
+// 文字列リテラルを管理する構造体
+typedef struct StringLiteral StringLiteral;
+struct StringLiteral {
+	StringLiteral* next; // 次の文字列リテラルかNULL
+	char* data; // 文字列データ
+	int len; // 文字列の長さ
+	int id; // 文字列のID
 };
 
 // 変数を管理する構造体
@@ -136,6 +150,8 @@ extern Function* functions; // 関数のリスト
 extern char* current_func_name; // 現在コード生成中の関数名
 extern int current_frame_size; // 現在の関数のフレームサイズ
 extern int label_count; // ラベル生成用のカウンタ
+extern int string_count; // 文字列ラベル生成用のカウンタ
+extern StringLiteral* string_literals; // 文字列リテラルのリスト
 
 // パーサ関連の関数
 Token* tokenize(char* p);

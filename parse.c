@@ -99,6 +99,20 @@ Token* tokenize(char* p) {
 			cur->len = p - q;
 			continue;
 		}
+		// 文字列リテラル
+		if (*p == '"') {
+			char* start = p;
+			p++; // 開始の"をスキップ
+			while (*p && *p != '"') {
+				p++; // 終了の"まで読み進める
+			}
+			if (*p != '"') {
+				error_at(start, "unterminated string literal");
+			}
+			p++; // 終了の"をスキップ
+			cur = new_token(TK_STR, cur, start, p - start);
+			continue;
+		}
 		//二文字の記号
 		if (startwith(p, "==") || startwith(p, "!=") || startwith(p, "<=") || startwith(p, ">=")) {
 			cur = new_token(TK_RESERVED, cur, p, 2);
@@ -676,6 +690,28 @@ Node* primary() {
 	}
 	if (token->kind == TK_NUM) {
 		return new_node_num(expect_number());
+	}
+	if (token->kind == TK_STR) {
+		Token* tok = token;
+		token = token->next;
+		
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_STR;
+		
+		// 文字列データをコピー（""を除く）
+		node->str_len = tok->len - 2; // ""を除いた長さ
+		node->str = calloc(node->str_len + 1, sizeof(char));
+		memcpy(node->str, tok->str + 1, node->str_len); // 最初の"をスキップ
+		node->str[node->str_len] = '\0';
+		
+		// 文字列リテラルの型はchar*
+		Type* ty = calloc(1, sizeof(Type));
+		ty->ty = TY_PTR;
+		ty->ptr_to = calloc(1, sizeof(Type));
+		ty->ptr_to->ty = TY_CHAR;
+		node->type = ty;
+		
+		return node;
 	}
 	Token* tok = consume_ident();
 	if (tok) {

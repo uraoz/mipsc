@@ -128,6 +128,43 @@ void gen(Node* node) {
 		return;
 	}
 	case ND_CALL: {
+		// printf関数の特別処理
+		if (strcmp(node->name, "printf") == 0) {
+			if (node->argc >= 1) {
+				// 第一引数（フォーマット文字列）を$a0に設定
+				gen(node->args[0]);
+				printf("	lw $a0, 0($sp)\n");
+				printf("	addiu $sp, $sp, 4\n");
+				
+				// 文字列長を動的に計算（strlenライクな処理）
+				int strlen_id = label_count++;
+				printf("	move $t1, $a0\n");      // 文字列アドレスを$t1にコピー
+				printf("	li $t2, 0\n");          // カウンタを0に初期化
+				printf(".strlen_loop_%d:\n", strlen_id);
+				printf("	lb $t3, 0($t1)\n");     // 1バイト読み込み
+				printf("	beq $t3, $zero, .strlen_end_%d\n", strlen_id); // null文字なら終了
+				printf("	addiu $t1, $t1, 1\n");  // アドレスを次へ
+				printf("	addiu $t2, $t2, 1\n");  // カウンタをインクリメント
+				printf("	j .strlen_loop_%d\n", strlen_id);
+				printf("	nop\n");
+				printf(".strlen_end_%d:\n", strlen_id);
+				
+				// MIPSシステムコール4004（write）を使用
+				printf("	move $a1, $a0\n");      // 文字列アドレスを$a1に
+				printf("	li $a0, 1\n");          // stdout (1) を$a0に
+				printf("	move $a2, $t2\n");      // 計算された文字列長を$a2に
+				printf("	li $v0, 4004\n");       // writeシステムコール
+				printf("	syscall\n");
+			}
+			
+			// printfの戻り値として適当な値（印刷した文字数など）をスタックにプッシュ
+			printf("	li $t0, 0\n");
+			printf("	addiu $sp, $sp, -4\n");
+			printf("	sw $t0, 0($sp)\n");
+			return;
+		}
+		
+		// 通常の関数呼び出し
 		// 引数を正しい順序で評価してスタックに積む
 		for (int i = 0; i < node->argc && i < 4; i++) {
 			gen(node->args[i]);
@@ -228,6 +265,25 @@ void gen(Node* node) {
 		printf("	addiu $sp, $sp, -4\n");
 		printf("	sw $t0, 0($sp)\n");
 		return;
+	case ND_STR: {
+		// 文字列リテラルのラベルを生成
+		int id = string_count++;
+		printf("	la $t0, .L_str_%d\n", id);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		
+		// 文字列データをリストに登録
+		StringLiteral* str_lit = calloc(1, sizeof(StringLiteral));
+		str_lit->data = calloc(node->str_len + 1, sizeof(char));
+		memcpy(str_lit->data, node->str, node->str_len);
+		str_lit->data[node->str_len] = '\0';
+		str_lit->len = node->str_len;
+		str_lit->id = id;
+		str_lit->next = string_literals;
+		string_literals = str_lit;
+		
+		return;
+	}
 	case ND_LVAR: {
 		// 変数の型を確認して配列かどうか判定
 		LVar* var = NULL;

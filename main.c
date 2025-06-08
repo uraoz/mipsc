@@ -8,6 +8,8 @@ Function* functions; // 関数のリスト
 char* current_func_name; // 現在コード生成中の関数名
 int current_frame_size; // 現在の関数のフレームサイズ
 int label_count = 0; // ラベル生成用のカウンタ
+int string_count = 0; // 文字列ラベル生成用のカウンタ
+StringLiteral* string_literals = NULL; // 文字列リテラルのリスト
 
 void error(char* fmt, ...) {
 	va_list ap;
@@ -40,6 +42,7 @@ int main(int argc, char** argv) {
 	globals = NULL;
 	functions = NULL;
 	current_func_name = NULL;
+	string_literals = NULL;
 	program();
 
 	// アセンブリの前半部を出力
@@ -67,5 +70,18 @@ int main(int argc, char** argv) {
 	for (int i = 0; code[i]; i++) {
 		gen(code[i]);
 	}
+	
+	// 文字列リテラルを出力（後から追加）
+	printf("\n# String literals\n");
+	printf(".data\n");
+	for (StringLiteral* str = string_literals; str; str = str->next) {
+		printf(".L_str_%d:\n", str->id);
+		printf("	.asciiz \"");
+		for (int i = 0; i < str->len; i++) {
+			printf("%c", str->data[i]);
+		}
+		printf("\"\n");
+	}
+	
 	return 0;
 }
