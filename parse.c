@@ -236,6 +236,17 @@ Token* tokenize(char* p) {
 			p += 2;
 			continue;
 		}
+		// インクリメント・デクリメント演算子
+		if (startwith(p, "++")) {
+			cur = new_token(TK_INC, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		if (startwith(p, "--")) {
+			cur = new_token(TK_DEC, cur, p, 2);
+			p += 2;
+			continue;
+		}
 		//一文字の記号
 		if (strchr("+-*/()<>;={},&[]", *p)) {
 			cur = new_token(TK_RESERVED, cur, p, 1);
@@ -521,12 +532,25 @@ Node* stmt() {
 		lvar->offset = min_offset - var_size;
 		locals = lvar;
 		
-		expect(";");
-		
-		// 空のノードを返す（宣言は実行時に何もしない）
-		node = calloc(1, sizeof(Node));
-		node->kind = ND_NUM;
-		node->val = 0;
+		// 初期化があるかチェック
+		if (consume("=")) {
+			// int x = 10; の形式
+			Node* var_node = calloc(1, sizeof(Node));
+			var_node->kind = ND_LVAR;
+			var_node->offset = lvar->offset;
+			var_node->type = type;
+			
+			Node* init_expr = expr();
+			node = new_node(ND_ASSIGN, var_node, init_expr);
+			expect(";");
+		} else {
+			// int x; の形式（初期化なし）
+			expect(";");
+			// 空のノードを返す（宣言は実行時に何もしない）
+			node = calloc(1, sizeof(Node));
+			node->kind = ND_NUM;
+			node->val = 0;
+		}
 		return node;
 	}
 	if (consume_return()) {
@@ -912,10 +936,26 @@ Node* primary() {
 }
 // 単項演算子のノードを作成する関数
 Node* unary() {
+	// 前置インクリメント
+	if (token->kind == TK_INC) {
+		token = token->next;
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_PRE_INC;
+		node->lhs = unary();
+		return node;
+	}
+	// 前置デクリメント
+	if (token->kind == TK_DEC) {
+		token = token->next;
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_PRE_DEC;
+		node->lhs = unary();
+		return node;
+	}
 	if (consume("+"))
-		return primary();
+		return postfix();
 	if (consume("-"))
-		return new_node(ND_SUB, new_node_num(0), primary());
+		return new_node(ND_SUB, new_node_num(0), postfix());
 	if (consume("&")) {
 		Node* node = calloc(1, sizeof(Node));
 		node->kind = ND_ADDR;
@@ -928,5 +968,29 @@ Node* unary() {
 		node->lhs = unary();
 		return node;
 	}
-	return primary();
+	return postfix();
+}
+
+// 後置演算子のノードを作成する関数
+Node* postfix() {
+	Node* node = primary();
+	
+	// 後置インクリメント
+	if (token->kind == TK_INC) {
+		token = token->next;
+		Node* inc_node = calloc(1, sizeof(Node));
+		inc_node->kind = ND_POST_INC;
+		inc_node->lhs = node;
+		return inc_node;
+	}
+	// 後置デクリメント
+	if (token->kind == TK_DEC) {
+		token = token->next;
+		Node* dec_node = calloc(1, sizeof(Node));
+		dec_node->kind = ND_POST_DEC;
+		dec_node->lhs = node;
+		return dec_node;
+	}
+	
+	return node;
 }

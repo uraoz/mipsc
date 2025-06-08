@@ -60,6 +60,8 @@ typedef enum {
 	TK_SUB_ASSIGN, // -=
 	TK_MUL_ASSIGN, // *=
 	TK_DIV_ASSIGN, // /=
+	TK_INC, // ++
+	TK_DEC, // --
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -92,6 +94,10 @@ typedef enum {
 	ND_SUB_ASSIGN, // -= 代入
 	ND_MUL_ASSIGN, // *= 代入
 	ND_DIV_ASSIGN, // /= 代入
+	ND_PRE_INC, // 前置インクリメント ++x
+	ND_POST_INC, // 後置インクリメント x++
+	ND_PRE_DEC, // 前置デクリメント --x
+	ND_POST_DEC, // 後置デクリメント x--
 	ND_LVAR, // ローカル変数
 	ND_GVAR, // グローバル変数
 	ND_RETURN, // return文
@@ -217,6 +223,7 @@ Node* add();
 Node* mul();
 Node* unary();
 Node* primary();
+Node* postfix();
 void program();
 extern Node* code[MAX_STATEMENTS];
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);

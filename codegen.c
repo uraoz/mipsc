@@ -436,6 +436,42 @@ void gen(Node* node) {
 		printf("	lw $t0, 0($t0)\n");        // そのアドレスの内容を$t0に取得
 		printf("	sw $t0, 0($sp)\n");        // 結果をスタックに格納
 		return;
+	case ND_PRE_INC:
+		// ++x: 変数を1増やしてから新しい値を返す
+		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
+		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
+		printf("	addiu $t1, $t1, 1\n");  // 1を加算
+		printf("	sw $t1, 0($t0)\n");  // 新しい値を格納
+		printf("	sw $t1, 0($sp)\n");  // 新しい値をスタックに残す
+		return;
+	case ND_POST_INC:
+		// x++: 現在の値を返してから変数を1増やす
+		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
+		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
+		printf("	addiu $t2, $t1, 1\n");  // 1を加算した値を$t2に
+		printf("	sw $t2, 0($t0)\n");  // 新しい値を格納
+		printf("	sw $t1, 0($sp)\n");  // 元の値をスタックに残す
+		return;
+	case ND_PRE_DEC:
+		// --x: 変数を1減らしてから新しい値を返す
+		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
+		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
+		printf("	addiu $t1, $t1, -1\n");  // 1を減算
+		printf("	sw $t1, 0($t0)\n");  // 新しい値を格納
+		printf("	sw $t1, 0($sp)\n");  // 新しい値をスタックに残す
+		return;
+	case ND_POST_DEC:
+		// x--: 現在の値を返してから変数を1減らす
+		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
+		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
+		printf("	addiu $t2, $t1, -1\n");  // 1を減算した値を$t2に
+		printf("	sw $t2, 0($t0)\n");  // 新しい値を格納
+		printf("	sw $t1, 0($sp)\n");  // 元の値をスタックに残す
+		return;
 	}
 	
 	// 二項演算子の処理

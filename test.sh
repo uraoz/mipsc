@@ -288,7 +288,64 @@ assert 2 'int main() { int x; int y; x = 8; y = 4; x /= y; return x; }'
 assert 25 'int main() { int x; int y; x = 3; y = (x += 2) * 5; return y; }'
 
 echo ""
-echo "=== PART 12: ファイル入力テスト ==="
+echo "=== PART 12: 変数宣言と初期化テスト ==="
+echo ""
+
+# 基本的な変数宣言と初期化
+assert 42 'int main() { int x = 42; return x; }'
+assert 15 'int main() { int a = 5; int b = 10; return a + b; }'
+
+# 旧スタイルと新スタイルの混在
+assert 10 'int main() { int x; x = 5; int y = x * 2; return y; }'
+assert 7 'int main() { int a = 3; int b; b = 4; return a + b; }'
+
+# 変数を使った初期化
+assert 20 'int main() { int x = 10; int y = x; int z = x + y; return z; }'
+
+# 複合演算子との組み合わせ
+assert 12 'int main() { int x = 5; x += 7; return x; }'
+assert 8 'int main() { int a = 2; int b = a * 3; b += a; return b; }'
+
+# if文での使用
+assert 100 'int main() { int x = 5; if (x > 3) { int y = 100; return y; } return 0; }'
+assert 0 'int main() { int x = 2; if (x > 3) { int y = 100; return y; } return 0; }'
+
+# char型の宣言と初期化
+assert 65 'int main() { char c = '\''A'\''; return c; }'
+assert 5 'int main() { char a = '\''5'\''; char b = '\''0'\''; return a - b; }'
+
+echo ""
+echo "=== PART 13: インクリメント/デクリメント演算子テスト ==="
+echo ""
+
+# 前置インクリメント/デクリメント
+assert 6 'int main() { int x = 5; return ++x; }'
+assert 4 'int main() { int x = 5; return --x; }'
+
+# 後置インクリメント/デクリメント
+assert 5 'int main() { int x = 5; return x++; }'
+assert 5 'int main() { int x = 5; return x--; }'
+
+# インクリメント/デクリメント後の値確認
+assert 6 'int main() { int x = 5; ++x; return x; }'
+assert 4 'int main() { int x = 5; --x; return x; }'
+assert 6 'int main() { int x = 5; x++; return x; }'
+assert 4 'int main() { int x = 5; x--; return x; }'
+
+# 複数回のインクリメント/デクリメント
+assert 7 'int main() { int x = 5; x++; x++; return x; }'
+assert 3 'int main() { int x = 5; x--; x--; return x; }'
+
+# 式での使用
+assert 12 'int main() { int x = 5; int y = ++x; return x + y; }'
+assert 11 'int main() { int x = 5; int y = x++; return x + y; }'
+assert 12 'int main() { int x = 5; return x++ + ++x; }'
+
+# forループでの使用
+assert 10 'int main() { int sum = 0; int i; for (i = 1; i <= 4; i++) sum += i; return sum; }'
+
+echo ""
+echo "=== PART 14: ファイル入力テスト ==="
 echo ""
 
 echo "=== Testing file input functionality ==="
