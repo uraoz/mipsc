@@ -31,12 +31,46 @@ void error_at(char* loc, char* fmt, ...) {
 	exit(1);
 }
 
+// ファイルを読み込んで文字列として返す関数
+char* read_file(char* path) {
+	FILE* fp = fopen(path, "r");
+	if (!fp) {
+		error("cannot open %s", path);
+	}
+	
+	// ファイルサイズを取得
+	fseek(fp, 0, SEEK_END);
+	size_t size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	
+	// メモリを確保してファイル内容を読み込み
+	char* buf = calloc(1, size + 2);  // null終端 + 改行用
+	fread(buf, size, 1, fp);
+	
+	// ファイルの最後に改行がない場合は追加
+	if (size == 0 || buf[size - 1] != '\n') {
+		buf[size++] = '\n';
+	}
+	buf[size] = '\0';
+	
+	fclose(fp);
+	return buf;
+}
+
 int main(int argc, char** argv) {
 	if (argc != 2) {
-		fprintf(stderr, "not correct arguments\n");
+		fprintf(stderr, "Usage: %s <input.c or \"source code\">\n", argv[0]);
 		return 1;
 	}
-	user_input = argv[1];
+	
+	// ファイルパスかソースコード文字列かを判定
+	if (strchr(argv[1], ' ') || strchr(argv[1], '{') || strchr(argv[1], ';')) {
+		// 空白や特定の文字が含まれていれば直接のソースコード
+		user_input = argv[1];
+	} else {
+		// そうでなければファイルパスとして扱う
+		user_input = read_file(argv[1]);
+	}
 	token = tokenize(user_input);
 	locals = NULL;
 	globals = NULL;
@@ -72,15 +106,25 @@ int main(int argc, char** argv) {
 	}
 	
 	// 文字列リテラルを出力（後から追加）
-	printf("\n# String literals\n");
-	printf(".data\n");
-	for (StringLiteral* str = string_literals; str; str = str->next) {
-		printf(".L_str_%d:\n", str->id);
-		printf("	.asciiz \"");
-		for (int i = 0; i < str->len; i++) {
-			printf("%c", str->data[i]);
+	if (string_literals) {
+		printf("\n# String literals\n");
+		for (StringLiteral* str = string_literals; str; str = str->next) {
+			printf(".L_str_%d:\n", str->id);
+			printf("	.asciiz \"");
+			for (int i = 0; i < str->len; i++) {
+				char c = str->data[i];
+				switch (c) {
+				case '\n': printf("\\n"); break;
+				case '\t': printf("\\t"); break;
+				case '\r': printf("\\r"); break;
+				case '\\': printf("\\\\"); break;
+				case '"': printf("\\\""); break;
+				case '\0': printf("\\0"); break;
+				default: printf("%c", c); break;
+				}
+			}
+			printf("\"\n");
 		}
-		printf("\"\n");
 	}
 	
 	return 0;

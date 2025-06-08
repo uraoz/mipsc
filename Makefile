@@ -11,6 +11,6 @@ test: mipsc
 	./test.sh
 
 clean:
-	rm -f mipsc *.o *~ tmp*
+	rm -f mipsc *.o *~ tmp* debug.s
 
 .PHONY: test clean

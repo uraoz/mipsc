@@ -1,3 +1,4 @@
+#ifndef MIPSC_H
 #define MIPSC_H
 
 #include <stdio.h>
@@ -7,10 +8,38 @@
 #include <ctype.h>
 #include <string.h>
 
+// 定数定義
+// 配列とバッファサイズの制限
+#define MAX_STATEMENTS 100
+#define MAX_FUNCTION_ARGS 10
+
+// 型サイズ (MIPS32)
+#define SIZE_INT 4
+#define SIZE_PTR 4
+#define SIZE_CHAR 1
+#define MIN_ALIGNMENT 4
+
+// スタックフレームオフセット
+#define ARG_SAVE_OFFSET -8
+#define ARG_SIZE 4
+
+// キーワード長
+#define LEN_RETURN 6
+#define LEN_IF 2
+#define LEN_ELSE 4
+#define LEN_WHILE 5
+#define LEN_FOR 3
+#define LEN_INT 3
+#define LEN_CHAR 4
+#define LEN_SIZEOF 6
+
+// コメント関連
+#define COMMENT_LINE_START "//"
+#define COMMENT_BLOCK_START "/*"
+#define COMMENT_BLOCK_END "*/"
 
 void error(char* fmt, ...);
 void error_at(char* loc, char* fmt, ...);
-char* read_file(char* path);
 
 // トークンの種類を表すenum
 typedef enum {
@@ -18,13 +47,19 @@ typedef enum {
 	TK_NUM, // 整数
 	TK_IDENT, // 識別子
 	TK_STR, // 文字列リテラル
+	TK_CHAR_LITERAL, // 文字リテラル
 	TK_RETURN, // return
 	TK_IF, // if
+	TK_ELSE, // else
 	TK_WHILE, // while
 	TK_FOR, // for
 	TK_INT, // int
 	TK_CHAR, // char
 	TK_SIZEOF, // sizeof
+	TK_ADD_ASSIGN, // +=
+	TK_SUB_ASSIGN, // -=
+	TK_MUL_ASSIGN, // *=
+	TK_DIV_ASSIGN, // /=
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -36,6 +71,8 @@ struct Token {
 	int val; // kindがTK_NUMのときの数値
 	char* str; // トークン文字列
 	int len; // トークンの長さ
+	char* str_data; // kindがTK_STRのときのエスケープ処理済み文字列データ
+	int str_len; // kindがTK_STRのときの処理済み文字列の長さ
 };
 
 
@@ -51,6 +88,10 @@ typedef enum {
 	ND_LT, // 小さい
 	ND_LE, // 小さいか等しい
 	ND_ASSIGN, // 代入
+	ND_ADD_ASSIGN, // += 代入
+	ND_SUB_ASSIGN, // -= 代入
+	ND_MUL_ASSIGN, // *= 代入
+	ND_DIV_ASSIGN, // /= 代入
 	ND_LVAR, // ローカル変数
 	ND_GVAR, // グローバル変数
 	ND_RETURN, // return文
@@ -91,6 +132,7 @@ struct Node {
 	Node* rhs; // 右辺
 	Node* cond; // if文/while文/for文の条件
 	Node* then; // if文/while文/for文のthen/body節
+	Node* els; // if文のelse節
 	Node* init; // for文の初期化
 	Node* inc; // for文のインクリメント
 	Node** body; // ブロック文の本体（文のリスト）
@@ -176,7 +218,7 @@ Node* mul();
 Node* unary();
 Node* primary();
 void program();
-extern Node* code[100];
+extern Node* code[MAX_STATEMENTS];
 Node* new_node(NodeKind kind, Node* lhs, Node* rhs);
 Node* new_node_num(int val);
 LVar* find_lvar(Token* tok);
@@ -196,3 +238,5 @@ Type* get_type(Node* node);
 // コード生成関連の関数
 void gen(Node* node);
 void gen_lval(Node* node);
+
+#endif // MIPSC_H

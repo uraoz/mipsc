@@ -1,6 +1,6 @@
 #include "mipsc.h"
 
-Node* code[100];
+Node* code[MAX_STATEMENTS];
 
 // 型管理関数の実装
 Type* new_type(TypeKind ty) {
@@ -30,14 +30,14 @@ int size_of(Type* ty) {
 	switch (ty->ty) {
 	case TY_INT:
 	case TY_PTR:
-		return 4; // MIPS32では4バイト
+		return SIZE_INT; // MIPS32では4バイト
 	case TY_CHAR:
-		return 1;
+		return SIZE_CHAR;
 	case TY_ARRAY:
 		// 配列のサイズ = 要素の型のサイズ × 要素数
 		return size_of(ty->ptr_to) * ty->array_size;
 	default:
-		return 4;
+		return SIZE_INT;
 	}
 }
 // 次のトークンが期待される記号であればトークンを読み進める
@@ -91,6 +91,36 @@ Token* tokenize(char* p) {
 			p++;
 			continue;
 		}
+		
+		// 単一行コメント (//)
+		if (*p == '/' && *(p + 1) == '/') {
+			p += 2; // "//"をスキップ
+			while (*p && *p != '\n') {
+				p++; // 行末まで読み飛ばし
+			}
+			continue;
+		}
+		
+		// 複数行コメント (/* */)
+		if (*p == '/' && *(p + 1) == '*') {
+			char* comment_start = p;
+			p += 2; // "/*"をスキップ
+			bool found_end = false;
+			while (*p) {
+				if (*p == '*' && *(p + 1) == '/') {
+					p += 2; // "*/"をスキップ
+					found_end = true;
+					break;
+				}
+				p++;
+			}
+			// 終端チェック（*/が見つからない場合）
+			if (!found_end) {
+				error_at(comment_start, "unterminated comment");
+			}
+			continue;
+		}
+		
 		// 数値
 		if (isdigit(*p)) {
 			cur = new_token(TK_NUM, cur, p, 0);
@@ -103,19 +133,106 @@ Token* tokenize(char* p) {
 		if (*p == '"') {
 			char* start = p;
 			p++; // 開始の"をスキップ
+			
+			// エスケープシーケンスを処理した文字列を作成
+			char* str_buf = calloc(1, 256); // 一時的な文字列バッファ
+			int str_len = 0;
+			
 			while (*p && *p != '"') {
-				p++; // 終了の"まで読み進める
+				if (*p == '\\') {
+					// エスケープシーケンス
+					p++; // バックスラッシュをスキップ
+					switch (*p) {
+					case 'n': str_buf[str_len++] = '\n'; break;
+					case 't': str_buf[str_len++] = '\t'; break;
+					case 'r': str_buf[str_len++] = '\r'; break;
+					case '\\': str_buf[str_len++] = '\\'; break;
+					case '"': str_buf[str_len++] = '"'; break;
+					case '0': str_buf[str_len++] = '\0'; break;
+					default:
+						error_at(p, "unknown escape sequence in string");
+					}
+					p++;
+				} else {
+					// 通常の文字
+					str_buf[str_len++] = *p;
+					p++;
+				}
 			}
+			
 			if (*p != '"') {
 				error_at(start, "unterminated string literal");
 			}
 			p++; // 終了の"をスキップ
+			
 			cur = new_token(TK_STR, cur, start, p - start);
+			// エスケープ処理済みの文字列をトークンに格納
+			cur->str_data = str_buf;
+			cur->str_len = str_len;
+			continue;
+		}
+		
+		// 文字リテラル
+		if (*p == '\'') {
+			char* start = p;
+			p++; // 開始の'をスキップ
+			
+			int char_value;
+			if (*p == '\\') {
+				// エスケープシーケンス
+				p++; // バックスラッシュをスキップ
+				switch (*p) {
+				case 'n': char_value = '\n'; break;
+				case 't': char_value = '\t'; break;
+				case 'r': char_value = '\r'; break;
+				case '\\': char_value = '\\'; break;
+				case '\'': char_value = '\''; break;
+				case '0': char_value = '\0'; break;
+				default:
+					error_at(p, "unknown escape sequence");
+				}
+				p++;
+			} else if (*p) {
+				// 通常の文字
+				char_value = *p;
+				p++;
+			} else {
+				error_at(start, "unterminated character literal");
+			}
+			
+			if (*p != '\'') {
+				error_at(start, "unterminated character literal");
+			}
+			p++; // 終了の'をスキップ
+			
+			cur = new_token(TK_CHAR_LITERAL, cur, start, p - start);
+			cur->val = char_value; // ASCII値を保存
 			continue;
 		}
 		//二文字の記号
 		if (startwith(p, "==") || startwith(p, "!=") || startwith(p, "<=") || startwith(p, ">=")) {
 			cur = new_token(TK_RESERVED, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		// 複合代入演算子
+		if (startwith(p, "+=")) {
+			cur = new_token(TK_ADD_ASSIGN, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		if (startwith(p, "-=")) {
+			cur = new_token(TK_SUB_ASSIGN, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		if (startwith(p, "*=")) {
+			cur = new_token(TK_MUL_ASSIGN, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		if (startwith(p, "/=")) {
+			cur = new_token(TK_DIV_ASSIGN, cur, p, 2);
 			p += 2;
 			continue;
 		}
@@ -132,19 +249,21 @@ Token* tokenize(char* p) {
 				p++;
 			}
 			int len = p - start;
-			if (len == 6 && !memcmp(start, "return", 6)) {
+			if (len == LEN_RETURN && !memcmp(start, "return", LEN_RETURN)) {
 				cur = new_token(TK_RETURN, cur, start, len);
-			} else if (len == 2 && !memcmp(start, "if", 2)) {
+			} else if (len == LEN_IF && !memcmp(start, "if", LEN_IF)) {
 				cur = new_token(TK_IF, cur, start, len);
-			} else if (len == 5 && !memcmp(start, "while", 5)) {
+			} else if (len == LEN_ELSE && !memcmp(start, "else", LEN_ELSE)) {
+				cur = new_token(TK_ELSE, cur, start, len);
+			} else if (len == LEN_WHILE && !memcmp(start, "while", LEN_WHILE)) {
 				cur = new_token(TK_WHILE, cur, start, len);
-			} else if (len == 3 && !memcmp(start, "for", 3)) {
+			} else if (len == LEN_FOR && !memcmp(start, "for", LEN_FOR)) {
 				cur = new_token(TK_FOR, cur, start, len);
-			} else if (len == 3 && !memcmp(start, "int", 3)) {
+			} else if (len == LEN_INT && !memcmp(start, "int", LEN_INT)) {
 				cur = new_token(TK_INT, cur, start, len);
-			} else if (len == 4 && !memcmp(start, "char", 4)) {
+			} else if (len == LEN_CHAR && !memcmp(start, "char", LEN_CHAR)) {
 				cur = new_token(TK_CHAR, cur, start, len);
-			} else if (len == 6 && !memcmp(start, "sizeof", 6)) {
+			} else if (len == LEN_SIZEOF && !memcmp(start, "sizeof", LEN_SIZEOF)) {
 				cur = new_token(TK_SIZEOF, cur, start, len);
 			} else {
 				cur = new_token(TK_IDENT, cur, start, len);
@@ -236,27 +355,7 @@ bool consume_sizeof() {
 	return true;
 }
 
-// 型をパースする関数（int, char, int*, int**, etc.）
-Type* parse_type() {
-	Type* base_type;
-	
-	if (consume_int()) {
-		base_type = new_type(TY_INT);
-	} else if (consume_char()) {
-		base_type = new_type(TY_CHAR);
-	} else {
-		error("type expected");
-	}
-	
-	// ポインタレベルをカウント（*, **, *** など）
-	while (consume("*")) {
-		base_type = pointer_to(base_type);
-	}
-	
-	return base_type;
-}
-
-// 型の前半部分（int, char, など）をパースする。ポインタの*はパースしない。
+// 基本型（int, char）をパースする関数。ポインタの*はパースしない。
 Type* parse_type_prefix() {
 	Type* base_type;
 	
@@ -266,6 +365,18 @@ Type* parse_type_prefix() {
 		base_type = new_type(TY_CHAR);
 	} else {
 		error("type expected");
+	}
+	
+	return base_type;
+}
+
+// 型をパースする関数（int, char, int*, int**, etc.）
+Type* parse_type() {
+	Type* base_type = parse_type_prefix();
+	
+	// ポインタレベルをカウント（*, **, *** など）
+	while (consume("*")) {
+		base_type = pointer_to(base_type);
 	}
 	
 	return base_type;
@@ -353,8 +464,21 @@ primary    = num | ident | "(" expr ")"
 
 Node* assign() {
 	Node* node = equality();
-	if (consume("="))
+	if (consume("=")) {
 		node = new_node(ND_ASSIGN, node, assign());
+	} else if (token->kind == TK_ADD_ASSIGN) {
+		token = token->next;
+		node = new_node(ND_ADD_ASSIGN, node, assign());
+	} else if (token->kind == TK_SUB_ASSIGN) {
+		token = token->next;
+		node = new_node(ND_SUB_ASSIGN, node, assign());
+	} else if (token->kind == TK_MUL_ASSIGN) {
+		token = token->next;
+		node = new_node(ND_MUL_ASSIGN, node, assign());
+	} else if (token->kind == TK_DIV_ASSIGN) {
+		token = token->next;
+		node = new_node(ND_DIV_ASSIGN, node, assign());
+	}
 	return node;
 }
 Node* expr() {
@@ -385,7 +509,7 @@ Node* stmt() {
 		lvar->type = type;
 		
 		// 現在の関数のローカル変数のオフセットを計算（型のサイズを考慮）
-		int min_offset = -8;  // 引数保存領域の下から開始
+		int min_offset = ARG_SAVE_OFFSET;  // 引数保存領域の下から開始
 		for (LVar* v = locals; v; v = v->next) {
 			if (v->offset < min_offset) {
 				min_offset = v->offset;
@@ -393,7 +517,7 @@ Node* stmt() {
 		}
 		// 型のサイズでアライメント調整（とりあえず4バイト境界）
 		int var_size = size_of(type);
-		if (var_size < 4) var_size = 4; // 最小4バイトでアライメント
+		if (var_size < MIN_ALIGNMENT) var_size = MIN_ALIGNMENT; // 最小4バイトでアライメント
 		lvar->offset = min_offset - var_size;
 		locals = lvar;
 		
@@ -419,6 +543,10 @@ Node* stmt() {
 		node->cond = expr();
 		expect(")");
 		node->then = stmt();
+		if (token->kind == TK_ELSE) {
+			token = token->next; // "else"をスキップ
+			node->els = stmt();
+		}
 		return node;
 	}
 	if (consume_while()) {
@@ -456,7 +584,7 @@ Node* stmt() {
 		node = calloc(1, sizeof(Node));
 		node->kind = ND_BLOCK;
 		// 文のリストを格納する配列を動的確保
-		Node** stmts = malloc(sizeof(Node*) * 100); // 最大100文
+		Node** stmts = malloc(sizeof(Node*) * MAX_STATEMENTS); // 最大100文
 		int i = 0;
 		while (!consume("}")) {
 			stmts[i++] = stmt();
@@ -509,7 +637,7 @@ Node* function() {
 			param->name = param_tok->str;
 			param->len = param_tok->len;
 			param->type = param_type;
-			param->offset = -8 - (argc + 1) * 4; // 引数は$s8の下の領域に
+			param->offset = ARG_SAVE_OFFSET - (argc + 1) * ARG_SIZE; // 引数は$s8の下の領域に
 			params = param;
 			argc++;
 		} while (consume(","));
@@ -529,7 +657,7 @@ Node* function() {
 	node->argc = argc;
 	
 	// 文のリストを格納する配列を動的確保
-	Node** stmts = malloc(sizeof(Node*) * 100); // 最大100文
+	Node** stmts = malloc(sizeof(Node*) * MAX_STATEMENTS); // 最大100文
 	int i = 0;
 	while (!consume("}")) {
 		stmts[i++] = stmt();
@@ -691,6 +819,11 @@ Node* primary() {
 	if (token->kind == TK_NUM) {
 		return new_node_num(expect_number());
 	}
+	if (token->kind == TK_CHAR_LITERAL) {
+		int val = token->val;
+		token = token->next;
+		return new_node_num(val);
+	}
 	if (token->kind == TK_STR) {
 		Token* tok = token;
 		token = token->next;
@@ -698,10 +831,10 @@ Node* primary() {
 		Node* node = calloc(1, sizeof(Node));
 		node->kind = ND_STR;
 		
-		// 文字列データをコピー（""を除く）
-		node->str_len = tok->len - 2; // ""を除いた長さ
+		// エスケープ処理済みの文字列データをコピー
+		node->str_len = tok->str_len;
 		node->str = calloc(node->str_len + 1, sizeof(char));
-		memcpy(node->str, tok->str + 1, node->str_len); // 最初の"をスキップ
+		memcpy(node->str, tok->str_data, node->str_len);
 		node->str[node->str_len] = '\0';
 		
 		// 文字列リテラルの型はchar*
@@ -726,7 +859,7 @@ Node* primary() {
 			node->name = fname;
 			
 			// 引数の解析
-			Node** args = malloc(sizeof(Node*) * 10); // 最大10引数
+			Node** args = malloc(sizeof(Node*) * MAX_FUNCTION_ARGS); // 最大10引数
 			int argc = 0;
 			if (!consume(")")) {
 				do {

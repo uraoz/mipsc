@@ -202,9 +202,20 @@ void gen(Node* node) {
 		gen(node->cond);
 		printf("	lw $t0, 0($sp)\n");
 		printf("	addiu $sp, $sp, 4\n");
-		printf("	beq $t0, $zero, .L_end_%d\n", seq);
-		gen(node->then);
-		printf(".L_end_%d:\n", seq);
+		if (node->els) {
+			// else節がある場合
+			printf("	beq $t0, $zero, .L_else_%d\n", seq);
+			gen(node->then);
+			printf("	j .L_end_%d\n", seq);
+			printf(".L_else_%d:\n", seq);
+			gen(node->els);
+			printf(".L_end_%d:\n", seq);
+		} else {
+			// else節がない場合（従来通り）
+			printf("	beq $t0, $zero, .L_end_%d\n", seq);
+			gen(node->then);
+			printf(".L_end_%d:\n", seq);
+		}
 		return;
 	}
 	case ND_WHILE: {
@@ -335,6 +346,79 @@ void gen(Node* node) {
 		gen(node->rhs);
 		printf("	lw $t1, 0($sp)\n");
 		printf("	addiu $sp, $sp, 4\n");
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sw $t1, 0($t0)\n");
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t1, 0($sp)\n");
+		return;
+	case ND_ADD_ASSIGN:
+		gen_lval(node->lhs);  // 左辺のアドレスをスタックに積む
+		gen_lval(node->lhs);  // 左辺のアドレスをもう一度積む（値取得用）
+		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+		printf("	lw $t0, 0($t0)\n");  // 現在の値を取得
+		printf("	sw $t0, 0($sp)\n");  // 現在の値をスタックに格納
+		gen(node->rhs);       // 右辺を評価
+		printf("	lw $t1, 0($sp)\n");  // 右辺の値
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	lw $t0, 0($sp)\n");  // 左辺の現在値
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	add $t1, $t0, $t1\n");  // 加算
+		printf("	lw $t0, 0($sp)\n");  // 左辺のアドレス
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sw $t1, 0($t0)\n");  // 結果を格納
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t1, 0($sp)\n");  // 結果をスタックに残す
+		return;
+	case ND_SUB_ASSIGN:
+		gen_lval(node->lhs);
+		gen_lval(node->lhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	lw $t0, 0($t0)\n");
+		printf("	sw $t0, 0($sp)\n");
+		gen(node->rhs);
+		printf("	lw $t1, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sub $t1, $t0, $t1\n");  // 減算
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sw $t1, 0($t0)\n");
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t1, 0($sp)\n");
+		return;
+	case ND_MUL_ASSIGN:
+		gen_lval(node->lhs);
+		gen_lval(node->lhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	lw $t0, 0($t0)\n");
+		printf("	sw $t0, 0($sp)\n");
+		gen(node->rhs);
+		printf("	lw $t1, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	mul $t1, $t0, $t1\n");  // 乗算
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sw $t1, 0($t0)\n");
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t1, 0($sp)\n");
+		return;
+	case ND_DIV_ASSIGN:
+		gen_lval(node->lhs);
+		gen_lval(node->lhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	lw $t0, 0($t0)\n");
+		printf("	sw $t0, 0($sp)\n");
+		gen(node->rhs);
+		printf("	lw $t1, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	div $t0, $t1\n");       // 除算
+		printf("	mflo $t1\n");           // 商を取得
 		printf("	lw $t0, 0($sp)\n");
 		printf("	addiu $sp, $sp, 4\n");
 		printf("	sw $t1, 0($t0)\n");
