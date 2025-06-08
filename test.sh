@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 基本的なテスト関数（従来のassert）
+# 基本的なテスト関数
 assert(){
     expected="$1"
     input="$2"
@@ -29,7 +29,7 @@ compare_with_gcc(){
     
     echo "=== Testing: $test_name ==="
     
-    # 我々のコンパイラでテスト
+    # 作ったコンパイラでテスト
     echo "Our compiler:"
     ./mipsc "$program" > tmp_our.s 2>/dev/null
     if mips-linux-gnu-gcc -mno-abicalls -fno-pic tmp_our.s -o tmp_our -nostdlib -static 2>/dev/null; then
@@ -79,7 +79,7 @@ test_printf(){
     
     echo "=== Testing: $test_name ==="
     
-    # 我々のコンパイラでprintf機能をテスト
+    # コンパイラでprintf機能をテスト
     echo "Our compiler (printf functionality):"
     ./mipsc "$program" > tmp_printf.s 2>/dev/null
     if mips-linux-gnu-gcc -mno-abicalls -fno-pic tmp_printf.s -o tmp_printf -nostdlib -static 2>/dev/null; then
@@ -399,7 +399,7 @@ echo ""
 assert 1 'int main() { return !0; }'
 assert 0 'int main() { return !1; }'
 assert 0 'int main() { return !42; }'
-assert 1 'int main() { return !(-1); }'
+assert 0 'int main() { return !(-1); }'
 
 # 論理AND演算子（短絡評価）
 assert 0 'int main() { return 0 && 0; }'
@@ -443,6 +443,47 @@ assert 0 'int main() { return !1 && 1; }'
 assert 1 'int main() { int x = 5; int y = 3; return x > y && y > 0; }'
 assert 0 'int main() { int x = 5; int y = 3; return x < y || y > 10; }'
 assert 1 'int main() { int x = 0; return !x; }'
+
+echo ""
+echo "=== PART 16: 三項演算子テスト ==="
+echo ""
+
+# 基本的な三項演算子
+assert 42 'int main() { return 1 ? 42 : 0; }'
+assert 0 'int main() { return 0 ? 42 : 0; }'
+assert 99 'int main() { return 1 < 0 ? 42 : 99; }'
+assert 42 'int main() { return 1 > 0 ? 42 : 99; }'
+
+# 比較演算子との組み合わせ
+assert 10 'int main() { return 5 > 3 ? 10 : 20; }'
+assert 20 'int main() { return 5 < 3 ? 10 : 20; }'
+assert 1 'int main() { return 1 == 1 ? 1 : 0; }'
+assert 0 'int main() { return 1 != 1 ? 1 : 0; }'
+
+# 変数を使った三項演算子
+assert 6 'int main() { int x = 5; return x > 3 ? x + 1 : x - 1; }'
+assert 1 'int main() { int x = 2; return x > 3 ? x + 1 : x - 1; }'
+assert 100 'int main() { int a = 10; int b = 5; return a > b ? 100 : 200; }'
+
+# 算術演算との組み合わせ
+assert 15 'int main() { return 2 + 3 > 4 ? 15 : 25; }'
+assert 8 'int main() { return 1 ? 3 + 5 : 10 - 2; }'
+assert 8 'int main() { return 0 ? 3 + 5 : 10 - 2; }'
+
+# ネストした三項演算子（右結合）
+assert 10 'int main() { return 3 > 5 ? 1 : 2 > 1 ? 10 : 20; }'
+assert 20 'int main() { return 3 > 5 ? 1 : 1 > 2 ? 10 : 20; }'
+assert 1 'int main() { return 5 > 3 ? 1 : 2 > 1 ? 10 : 20; }'
+
+# 論理演算子との組み合わせ
+assert 42 'int main() { return 1 && 1 ? 42 : 0; }'
+assert 0 'int main() { return 1 && 0 ? 42 : 0; }'
+assert 42 'int main() { return 0 || 1 ? 42 : 0; }'
+assert 0 'int main() { return 0 || 0 ? 42 : 0; }'
+
+# 複雑な組み合わせ
+assert 7 'int main() { int x = 3; int y = 4; return x < y ? x + y : x * y; }'
+assert 12 'int main() { int x = 4; int y = 3; return x < y ? x + y : x * y; }'
 
 echo ""
 echo "########################################"

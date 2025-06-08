@@ -215,10 +215,21 @@ Token* tokenize(char* p) {
 			p += 2;
 			continue;
 		}
-		// 論理NOT演算子 (単独の!) - デバッグ用出力追加
-		if (*p == '!') {
-			fprintf(stderr, "DEBUG: Found ! at position, creating TK_NOT token\n");
+		// 論理NOT演算子 (単独の!)
+		if (*p == '!' && (*(p+1) == '\0' || *(p+1) != '=')) {
 			cur = new_token(TK_NOT, cur, p, 1);
+			p++;
+			continue;
+		}
+		
+		// 三項演算子の記号
+		if (*p == '?') {
+			cur = new_token(TK_QUESTION, cur, p, 1);
+			p++;
+			continue;
+		}
+		if (*p == ':') {
+			cur = new_token(TK_COLON, cur, p, 1);
 			p++;
 			continue;
 		}
@@ -516,8 +527,36 @@ Node* assign() {
 	}
 	return node;
 }
+
+// 三項演算子の実装
+Node* ternary() {
+	Node* node = assign();
+	
+	if (token->kind == TK_QUESTION) {
+		token = token->next; // '?' を消費
+		Node* then_expr = expr(); // then式を再帰的に評価
+		
+		if (token->kind != TK_COLON) {
+			error("expected ':' in ternary operator");
+		}
+		token = token->next; // ':' を消費
+		
+		Node* else_expr = ternary(); // else式を右結合で評価
+		
+		Node* ternary_node = calloc(1, sizeof(Node));
+		ternary_node->kind = ND_TERNARY;
+		ternary_node->cond = node;    // 条件式
+		ternary_node->then = then_expr; // then式
+		ternary_node->els = else_expr;  // else式
+		
+		return ternary_node;
+	}
+	
+	return node;
+}
+
 Node* expr() {
-	return assign();
+	return ternary();
 }
 Node* stmt() {
 	Node* node;
@@ -1021,13 +1060,10 @@ Node* unary() {
 		return node;
 	}
 	if (token->kind == TK_NOT) {
-		fprintf(stderr, "DEBUG: Parsing NOT operator\n");
 		token = token->next;
 		Node* node = calloc(1, sizeof(Node));
 		node->kind = ND_NOT;
-		fprintf(stderr, "DEBUG: About to parse NOT operand\n");
-		node->lhs = primary();  // 一時的にprimary()を使用してテスト
-		fprintf(stderr, "DEBUG: Finished parsing NOT operand\n");
+		node->lhs = unary();  // 右結合なのでunary()を使用
 		return node;
 	}
 	return postfix();

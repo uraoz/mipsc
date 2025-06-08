@@ -1,5 +1,92 @@
 #include "mipsc.h"
 
+// 複合代入演算子の共通処理
+void gen_compound_assign(Node* node, const char* operation, bool is_div) {
+	gen_lval(node->lhs);  // 左辺のアドレスをスタックに積む
+	gen_lval(node->lhs);  // 左辺のアドレスをもう一度積む（値取得用）
+	printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+	printf("	lw $t0, 0($t0)\n");  // 現在の値を取得
+	printf("	sw $t0, 0($sp)\n");  // 現在の値をスタックに格納
+	gen(node->rhs);       // 右辺を評価
+	printf("	lw $t1, 0($sp)\n");  // 右辺の値
+	printf("	addiu $sp, $sp, 4\n");
+	printf("	lw $t0, 0($sp)\n");  // 左辺の現在値
+	printf("	addiu $sp, $sp, 4\n");
+	
+	if (is_div) {
+		printf("	div $t0, $t1\n");       // 除算
+		printf("	mflo $t1\n");           // 商を取得
+	} else {
+		printf("	%s $t1, $t0, $t1\n", operation);  // 演算
+	}
+	
+	printf("	lw $t0, 0($sp)\n");  // 左辺のアドレス
+	printf("	addiu $sp, $sp, 4\n");
+	printf("	sw $t1, 0($t0)\n");  // 結果を格納
+	printf("	addiu $sp, $sp, -4\n");
+	printf("	sw $t1, 0($sp)\n");  // 結果をスタックに残す
+}
+
+// インクリメント/デクリメント演算子の共通処理
+void gen_inc_dec(Node* node, int delta, bool is_prefix) {
+	gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
+	printf("	lw $t0, 0($sp)\n");  // アドレスを取得
+	printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
+	
+	if (is_prefix) {
+		// 前置: 先に値を更新
+		printf("	addiu $t1, $t1, %d\n", delta);  // 値を更新
+		printf("	sw $t1, 0($t0)\n");  // 新しい値を格納
+		printf("	sw $t1, 0($sp)\n");  // 新しい値をスタックに残す
+	} else {
+		// 後置: 元の値を残して値を更新
+		printf("	addiu $t2, $t1, %d\n", delta);  // 新しい値を$t2に計算
+		printf("	sw $t2, 0($t0)\n");  // 新しい値を格納
+		printf("	sw $t1, 0($sp)\n");  // 元の値をスタックに残す
+	}
+}
+
+// 変数アクセスの共通処理（配列判定含む）
+void gen_variable_access(Node* node, bool is_local) {
+	bool is_array = false;
+	
+	// 型情報を確認して配列かどうか判定
+	if (is_local) {
+		for (LVar* var = locals; var; var = var->next) {
+			if (var->offset == node->offset) {
+				is_array = (var->type->ty == TY_ARRAY);
+				break;
+			}
+		}
+	} else {
+		for (GVar* var = globals; var; var = var->next) {
+			if (strcmp(var->name, node->name) == 0) {
+				is_array = (var->type->ty == TY_ARRAY);
+				break;
+			}
+		}
+	}
+	
+	if (is_array) {
+		// 配列の場合はアドレス（配列→ポインタ変換）
+		if (is_local) {
+			printf("	addiu $t0, $s8, %d\n", node->offset);
+		} else {
+			printf("	la $t0, %s\n", node->name);
+		}
+	} else {
+		// 通常の変数の場合は値を読み込み
+		if (is_local) {
+			printf("	lw $t0, %d($s8)\n", node->offset);
+		} else {
+			printf("	lw $t0, %s\n", node->name);
+		}
+	}
+	
+	printf("	addiu $sp, $sp, -4\n");
+	printf("	sw $t0, 0($sp)\n");
+}
+
 void gen_lval(Node* node) {
 	switch (node->kind) {
 	case ND_LVAR:
@@ -296,49 +383,11 @@ void gen(Node* node) {
 		return;
 	}
 	case ND_LVAR: {
-		// 変数の型を確認して配列かどうか判定
-		LVar* var = NULL;
-		for (LVar* v = locals; v; v = v->next) {
-			if (v->offset == node->offset) {
-				var = v;
-				break;
-			}
-		}
-		
-		if (var && var->type->ty == TY_ARRAY) {
-			// 配列の場合はアドレス（配列→ポインタ変換）
-			printf("	addiu $t0, $s8, %d\n", node->offset);
-			printf("	addiu $sp, $sp, -4\n");
-			printf("	sw $t0, 0($sp)\n");
-		} else {
-			// 通常の変数の場合は値を読み込み
-			printf("	lw $t0, %d($s8)\n", node->offset);
-			printf("	addiu $sp, $sp, -4\n");
-			printf("	sw $t0, 0($sp)\n");
-		}
+		gen_variable_access(node, true);
 		return;
 	}
 	case ND_GVAR: {
-		// グローバル変数の型を確認して配列かどうか判定
-		GVar* var = NULL;
-		for (GVar* v = globals; v; v = v->next) {
-			if (strcmp(v->name, node->name) == 0) {
-				var = v;
-				break;
-			}
-		}
-		
-		if (var && var->type->ty == TY_ARRAY) {
-			// 配列の場合はアドレス（配列→ポインタ変換）
-			printf("	la $t0, %s\n", node->name);
-			printf("	addiu $sp, $sp, -4\n");
-			printf("	sw $t0, 0($sp)\n");
-		} else {
-			// 通常の変数の場合は値を読み込み
-			printf("	lw $t0, %s\n", node->name);
-			printf("	addiu $sp, $sp, -4\n");
-			printf("	sw $t0, 0($sp)\n");
-		}
+		gen_variable_access(node, false);
 		return;
 	}
 	case ND_ASSIGN:
@@ -353,77 +402,16 @@ void gen(Node* node) {
 		printf("	sw $t1, 0($sp)\n");
 		return;
 	case ND_ADD_ASSIGN:
-		gen_lval(node->lhs);  // 左辺のアドレスをスタックに積む
-		gen_lval(node->lhs);  // 左辺のアドレスをもう一度積む（値取得用）
-		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
-		printf("	lw $t0, 0($t0)\n");  // 現在の値を取得
-		printf("	sw $t0, 0($sp)\n");  // 現在の値をスタックに格納
-		gen(node->rhs);       // 右辺を評価
-		printf("	lw $t1, 0($sp)\n");  // 右辺の値
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	lw $t0, 0($sp)\n");  // 左辺の現在値
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	add $t1, $t0, $t1\n");  // 加算
-		printf("	lw $t0, 0($sp)\n");  // 左辺のアドレス
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	sw $t1, 0($t0)\n");  // 結果を格納
-		printf("	addiu $sp, $sp, -4\n");
-		printf("	sw $t1, 0($sp)\n");  // 結果をスタックに残す
+		gen_compound_assign(node, "add", false);
 		return;
 	case ND_SUB_ASSIGN:
-		gen_lval(node->lhs);
-		gen_lval(node->lhs);
-		printf("	lw $t0, 0($sp)\n");
-		printf("	lw $t0, 0($t0)\n");
-		printf("	sw $t0, 0($sp)\n");
-		gen(node->rhs);
-		printf("	lw $t1, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	sub $t1, $t0, $t1\n");  // 減算
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	sw $t1, 0($t0)\n");
-		printf("	addiu $sp, $sp, -4\n");
-		printf("	sw $t1, 0($sp)\n");
+		gen_compound_assign(node, "sub", false);
 		return;
 	case ND_MUL_ASSIGN:
-		gen_lval(node->lhs);
-		gen_lval(node->lhs);
-		printf("	lw $t0, 0($sp)\n");
-		printf("	lw $t0, 0($t0)\n");
-		printf("	sw $t0, 0($sp)\n");
-		gen(node->rhs);
-		printf("	lw $t1, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	mul $t1, $t0, $t1\n");  // 乗算
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	sw $t1, 0($t0)\n");
-		printf("	addiu $sp, $sp, -4\n");
-		printf("	sw $t1, 0($sp)\n");
+		gen_compound_assign(node, "mul", false);
 		return;
 	case ND_DIV_ASSIGN:
-		gen_lval(node->lhs);
-		gen_lval(node->lhs);
-		printf("	lw $t0, 0($sp)\n");
-		printf("	lw $t0, 0($t0)\n");
-		printf("	sw $t0, 0($sp)\n");
-		gen(node->rhs);
-		printf("	lw $t1, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	div $t0, $t1\n");       // 除算
-		printf("	mflo $t1\n");           // 商を取得
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	sw $t1, 0($t0)\n");
-		printf("	addiu $sp, $sp, -4\n");
-		printf("	sw $t1, 0($sp)\n");
+		gen_compound_assign(node, "", true);  // 除算は特別処理
 		return;
 	case ND_ADDR:
 		// &variable: 変数のアドレスをスタックにプッシュ
@@ -437,41 +425,54 @@ void gen(Node* node) {
 		printf("	sw $t0, 0($sp)\n");        // 結果をスタックに格納
 		return;
 	case ND_PRE_INC:
-		// ++x: 変数を1増やしてから新しい値を返す
-		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
-		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
-		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
-		printf("	addiu $t1, $t1, 1\n");  // 1を加算
-		printf("	sw $t1, 0($t0)\n");  // 新しい値を格納
-		printf("	sw $t1, 0($sp)\n");  // 新しい値をスタックに残す
+		gen_inc_dec(node, 1, true);
 		return;
 	case ND_POST_INC:
-		// x++: 現在の値を返してから変数を1増やす
-		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
-		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
-		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
-		printf("	addiu $t2, $t1, 1\n");  // 1を加算した値を$t2に
-		printf("	sw $t2, 0($t0)\n");  // 新しい値を格納
-		printf("	sw $t1, 0($sp)\n");  // 元の値をスタックに残す
+		gen_inc_dec(node, 1, false);
 		return;
 	case ND_PRE_DEC:
-		// --x: 変数を1減らしてから新しい値を返す
-		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
-		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
-		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
-		printf("	addiu $t1, $t1, -1\n");  // 1を減算
-		printf("	sw $t1, 0($t0)\n");  // 新しい値を格納
-		printf("	sw $t1, 0($sp)\n");  // 新しい値をスタックに残す
+		gen_inc_dec(node, -1, true);
 		return;
 	case ND_POST_DEC:
-		// x--: 現在の値を返してから変数を1減らす
-		gen_lval(node->lhs);  // 変数のアドレスをスタックに積む
-		printf("	lw $t0, 0($sp)\n");  // アドレスを取得
-		printf("	lw $t1, 0($t0)\n");  // 現在の値を取得
-		printf("	addiu $t2, $t1, -1\n");  // 1を減算した値を$t2に
-		printf("	sw $t2, 0($t0)\n");  // 新しい値を格納
-		printf("	sw $t1, 0($sp)\n");  // 元の値をスタックに残す
+		gen_inc_dec(node, -1, false);
 		return;
+	case ND_NOT: {
+		// 論理NOT (単項演算子)
+		int label = label_count++;
+		gen(node->lhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	beqz $t0, .Ltrue%d\n", label);
+		printf("	li $t0, 0\n");  // 値が0でない場合は0を返す
+		printf("	j .Lend%d\n", label);
+		printf(".Ltrue%d:\n", label);
+		printf("	li $t0, 1\n");  // 値が0の場合は1を返す
+		printf(".Lend%d:\n", label);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	}
+	case ND_TERNARY: {
+		// 三項演算子 cond ? then_expr : else_expr
+		int label = label_count++;
+		
+		// 条件式を評価
+		gen(node->cond);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	beqz $t0, .Lelse%d\n", label);  // 条件が偽なら else_expr へ
+		
+		// then_expr を評価
+		gen(node->then);
+		printf("	j .Lend%d\n", label);  // 評価後は終了へ
+		
+		// else_expr を評価
+		printf(".Lelse%d:\n", label);
+		gen(node->els);
+		
+		printf(".Lend%d:\n", label);
+		return;
+	}
 	}
 	
 	// 二項演算子の処理
@@ -567,26 +568,6 @@ void gen(Node* node) {
 		printf(".Lend%d:\n", label);
 		printf("	addiu $sp, $sp, -4\n");
 		printf("	sw $t0, 0($sp)\n");
-		return;
-	}
-	case ND_NOT: {
-		// 論理NOT (条件分岐を使用)
-		fprintf(stderr, "DEBUG: Generating code for NOT operator\n");
-		int label = label_count++;
-		fprintf(stderr, "DEBUG: Using label %d\n", label);
-		gen(node->lhs);
-		fprintf(stderr, "DEBUG: Generated code for NOT operand\n");
-		printf("	lw $t0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
-		printf("	beqz $t0, .Ltrue%d\n", label);
-		printf("	li $t0, 0\n");  // 値が0でない場合は0を返す
-		printf("	j .Lend%d\n", label);
-		printf(".Ltrue%d:\n", label);
-		printf("	li $t0, 1\n");  // 値が0の場合は1を返す
-		printf(".Lend%d:\n", label);
-		printf("	addiu $sp, $sp, -4\n");
-		printf("	sw $t0, 0($sp)\n");
-		fprintf(stderr, "DEBUG: Finished generating NOT code\n");
 		return;
 	}
 	}

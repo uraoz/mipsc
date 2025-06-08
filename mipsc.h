@@ -65,6 +65,8 @@ typedef enum {
 	TK_AND, // &&
 	TK_OR, // ||
 	TK_NOT, // !
+	TK_QUESTION, // ?
+	TK_COLON, // :
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -117,6 +119,7 @@ typedef enum {
 	ND_AND, // 論理AND &&
 	ND_OR, // 論理OR ||
 	ND_NOT, // 論理NOT !
+	ND_TERNARY, // 三項演算子 ? :
 } NodeKind;
 
 // 型の種類を表すenum
@@ -223,6 +226,7 @@ int expect_number();
 bool at_eof();
 
 Node* expr();
+Node* ternary();
 Node* logical_or();
 Node* logical_and();
 Node* equality();
@@ -253,5 +257,8 @@ Type* get_type(Node* node);
 // コード生成関連の関数
 void gen(Node* node);
 void gen_lval(Node* node);
+void gen_compound_assign(Node* node, const char* operation, bool is_div);
+void gen_inc_dec(Node* node, int delta, bool is_prefix);
+void gen_variable_access(Node* node, bool is_local);
 
 #endif // MIPSC_H
