@@ -62,6 +62,9 @@ typedef enum {
 	TK_DIV_ASSIGN, // /=
 	TK_INC, // ++
 	TK_DEC, // --
+	TK_AND, // &&
+	TK_OR, // ||
+	TK_NOT, // !
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -111,6 +114,9 @@ typedef enum {
 	ND_DEREF, // 間接参照演算子 *
 	ND_SIZEOF, // sizeof演算子
 	ND_STR, // 文字列リテラル
+	ND_AND, // 論理AND &&
+	ND_OR, // 論理OR ||
+	ND_NOT, // 論理NOT !
 } NodeKind;
 
 // 型の種類を表すenum
@@ -217,6 +223,8 @@ int expect_number();
 bool at_eof();
 
 Node* expr();
+Node* logical_or();
+Node* logical_and();
 Node* equality();
 Node* relational();
 Node* add();

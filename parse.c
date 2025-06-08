@@ -209,8 +209,21 @@ Token* tokenize(char* p) {
 			cur->val = char_value; // ASCII値を保存
 			continue;
 		}
-		//二文字の記号
-		if (startwith(p, "==") || startwith(p, "!=") || startwith(p, "<=") || startwith(p, ">=")) {
+		// !=演算子 (論理NOTより先に処理)
+		if (startwith(p, "!=")) {
+			cur = new_token(TK_RESERVED, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		// 論理NOT演算子 (単独の!) - デバッグ用出力追加
+		if (*p == '!') {
+			fprintf(stderr, "DEBUG: Found ! at position, creating TK_NOT token\n");
+			cur = new_token(TK_NOT, cur, p, 1);
+			p++;
+			continue;
+		}
+		//その他の二文字の記号
+		if (startwith(p, "==") || startwith(p, "<=") || startwith(p, ">=")) {
 			cur = new_token(TK_RESERVED, cur, p, 2);
 			p += 2;
 			continue;
@@ -244,6 +257,17 @@ Token* tokenize(char* p) {
 		}
 		if (startwith(p, "--")) {
 			cur = new_token(TK_DEC, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		// 論理演算子
+		if (startwith(p, "&&")) {
+			cur = new_token(TK_AND, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		if (startwith(p, "||")) {
+			cur = new_token(TK_OR, cur, p, 2);
 			p += 2;
 			continue;
 		}
@@ -474,7 +498,7 @@ primary    = num | ident | "(" expr ")"
 // セミコロン区切りの文をパースする関数
 
 Node* assign() {
-	Node* node = equality();
+	Node* node = logical_or();
 	if (consume("=")) {
 		node = new_node(ND_ASSIGN, node, assign());
 	} else if (token->kind == TK_ADD_ASSIGN) {
@@ -753,6 +777,34 @@ void program() {
 	code[i] = NULL;
 }
 // 等しいと不等しいのノードを作成する関数
+// 論理OR演算子
+Node* logical_or() {
+	Node* node = logical_and();
+
+	while (1) {
+		if (token->kind == TK_OR) {
+			token = token->next;
+			node = new_node(ND_OR, node, logical_and());
+		} else {
+			return node;
+		}
+	}
+}
+
+// 論理AND演算子
+Node* logical_and() {
+	Node* node = equality();
+
+	while (1) {
+		if (token->kind == TK_AND) {
+			token = token->next;
+			node = new_node(ND_AND, node, equality());
+		} else {
+			return node;
+		}
+	}
+}
+
 Node* equality() {
 	Node* node = relational();
 
@@ -966,6 +1018,16 @@ Node* unary() {
 		Node* node = calloc(1, sizeof(Node));
 		node->kind = ND_DEREF;
 		node->lhs = unary();
+		return node;
+	}
+	if (token->kind == TK_NOT) {
+		fprintf(stderr, "DEBUG: Parsing NOT operator\n");
+		token = token->next;
+		Node* node = calloc(1, sizeof(Node));
+		node->kind = ND_NOT;
+		fprintf(stderr, "DEBUG: About to parse NOT operand\n");
+		node->lhs = primary();  // 一時的にprimary()を使用してテスト
+		fprintf(stderr, "DEBUG: Finished parsing NOT operand\n");
 		return node;
 	}
 	return postfix();

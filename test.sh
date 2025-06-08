@@ -392,6 +392,59 @@ else
 fi
 
 echo ""
+echo "=== PART 15: 論理演算子テスト ==="
+echo ""
+
+# 論理NOT演算子
+assert 1 'int main() { return !0; }'
+assert 0 'int main() { return !1; }'
+assert 0 'int main() { return !42; }'
+assert 1 'int main() { return !(-1); }'
+
+# 論理AND演算子（短絡評価）
+assert 0 'int main() { return 0 && 0; }'
+assert 0 'int main() { return 0 && 1; }'
+assert 0 'int main() { return 1 && 0; }'
+assert 1 'int main() { return 1 && 1; }'
+assert 1 'int main() { return 3 && 5; }'
+assert 0 'int main() { return 0 && 42; }'
+
+# 論理OR演算子（短絡評価）
+assert 0 'int main() { return 0 || 0; }'
+assert 1 'int main() { return 0 || 1; }'
+assert 1 'int main() { return 1 || 0; }'
+assert 1 'int main() { return 1 || 1; }'
+assert 1 'int main() { return 3 || 0; }'
+assert 1 'int main() { return 0 || 42; }'
+
+# 複合論理式
+assert 1 'int main() { return 1 && 1 && 1; }'
+assert 0 'int main() { return 1 && 0 && 1; }'
+assert 1 'int main() { return 0 || 0 || 1; }'
+assert 0 'int main() { return 0 || 0 || 0; }'
+
+# 論理演算子の優先順位
+assert 1 'int main() { return 1 || 0 && 0; }'  # (1 || 0) && 0 ではなく 1 || (0 && 0)
+assert 0 'int main() { return 0 && 1 || 0; }'  # (0 && 1) || 0
+
+# 比較演算子との組み合わせ
+assert 1 'int main() { return 5 > 3 && 2 < 4; }'
+assert 0 'int main() { return 5 > 3 && 2 > 4; }'
+assert 1 'int main() { return 5 < 3 || 2 < 4; }'
+assert 0 'int main() { return 5 < 3 || 2 > 4; }'
+
+# 論理NOT と他の演算子
+assert 0 'int main() { return !(5 > 3); }'
+assert 1 'int main() { return !(5 < 3); }'
+assert 1 'int main() { return !0 && 1; }'
+assert 0 'int main() { return !1 && 1; }'
+
+# 変数を使った論理演算
+assert 1 'int main() { int x = 5; int y = 3; return x > y && y > 0; }'
+assert 0 'int main() { int x = 5; int y = 3; return x < y || y > 10; }'
+assert 1 'int main() { int x = 0; return !x; }'
+
+echo ""
 echo "########################################"
 echo "#          テスト完了                    #"
 echo "########################################"

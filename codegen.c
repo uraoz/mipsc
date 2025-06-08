@@ -529,6 +529,66 @@ void gen(Node* node) {
 	case ND_LE:
 		printf("	sle $t0, $t0, $t1\n");
 		break;
+	case ND_AND: {
+		// 論理AND (短絡評価)
+		// 左辺が偽なら右辺を評価せずに0を返す
+		int label = label_count++;
+		gen(node->lhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	beqz $t0, .Lfalse%d\n", label);
+		gen(node->rhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sltu $t0, $zero, $t0\n"); // 0 < $t0 なら1, それ以外なら0
+		printf("	j .Lend%d\n", label);
+		printf(".Lfalse%d:\n", label);
+		printf("	li $t0, 0\n");
+		printf(".Lend%d:\n", label);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	}
+	case ND_OR: {
+		// 論理OR (短絡評価)
+		// 左辺が真なら右辺を評価せずに1を返す
+		int label = label_count++;
+		gen(node->lhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	bnez $t0, .Ltrue%d\n", label);
+		gen(node->rhs);
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	sltu $t0, $zero, $t0\n"); // 0 < $t0 なら1, それ以外なら0
+		printf("	j .Lend%d\n", label);
+		printf(".Ltrue%d:\n", label);
+		printf("	li $t0, 1\n");
+		printf(".Lend%d:\n", label);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	}
+	case ND_NOT: {
+		// 論理NOT (条件分岐を使用)
+		fprintf(stderr, "DEBUG: Generating code for NOT operator\n");
+		int label = label_count++;
+		fprintf(stderr, "DEBUG: Using label %d\n", label);
+		gen(node->lhs);
+		fprintf(stderr, "DEBUG: Generated code for NOT operand\n");
+		printf("	lw $t0, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		printf("	beqz $t0, .Ltrue%d\n", label);
+		printf("	li $t0, 0\n");  // 値が0でない場合は0を返す
+		printf("	j .Lend%d\n", label);
+		printf(".Ltrue%d:\n", label);
+		printf("	li $t0, 1\n");  // 値が0の場合は1を返す
+		printf(".Lend%d:\n", label);
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		fprintf(stderr, "DEBUG: Finished generating NOT code\n");
+		return;
+	}
 	}
 
 	printf("	addiu $sp, $sp, -4\n");
