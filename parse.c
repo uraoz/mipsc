@@ -22,12 +22,20 @@ Type* array_to(Type* base, size_t size) {
 	return type;
 }
 
+Type* struct_to(StructDef* struct_def) {
+	Type* type = new_type(TY_STRUCT);
+	type->struct_def = struct_def;
+	return type;
+}
+
 bool is_integer(Type* ty) {
 	return ty->ty == TY_INT || ty->ty == TY_CHAR;
 }
 
 int size_of(Type* ty) {
 	switch (ty->ty) {
+	case TY_VOID:
+		return 1; // void型は1バイトとして扱う（void*計算用）
 	case TY_INT:
 	case TY_PTR:
 		return SIZE_INT; // MIPS32では4バイト
@@ -36,6 +44,9 @@ int size_of(Type* ty) {
 	case TY_ARRAY:
 		// 配列のサイズ = 要素の型のサイズ × 要素数
 		return size_of(ty->ptr_to) * ty->array_size;
+	case TY_STRUCT:
+		// 構造体のサイズ
+		return ty->struct_def->size;
 	default:
 		return SIZE_INT;
 	}
@@ -283,15 +294,15 @@ Token* tokenize(char* p) {
 			continue;
 		}
 		//一文字の記号
-		if (strchr("+-*/%()<>;={},&[]", *p)) {
+		if (strchr("+-*/%()<>;={},&[]{}.", *p)) {
 			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
 		}
-		//キーワードまたは変数（英小文字）
-		if ('a' <= *p && *p <= 'z') {
+		//キーワードまたは変数（英文字）
+		if (('a' <= *p && *p <= 'z') || ('A' <= *p && *p <= 'Z')) {
 			char* start = p;
-			while (('a' <= *p && *p <= 'z') || ('0' <= *p && *p <= '9') || *p == '_') {
+			while (('a' <= *p && *p <= 'z') || ('A' <= *p && *p <= 'Z') || ('0' <= *p && *p <= '9') || *p == '_') {
 				p++;
 			}
 			int len = p - start;
@@ -305,12 +316,16 @@ Token* tokenize(char* p) {
 				cur = new_token(TK_WHILE, cur, start, len);
 			} else if (len == LEN_FOR && !memcmp(start, "for", LEN_FOR)) {
 				cur = new_token(TK_FOR, cur, start, len);
+			} else if (len == LEN_VOID && !memcmp(start, "void", LEN_VOID)) {
+				cur = new_token(TK_VOID, cur, start, len);
 			} else if (len == LEN_INT && !memcmp(start, "int", LEN_INT)) {
 				cur = new_token(TK_INT, cur, start, len);
 			} else if (len == LEN_CHAR && !memcmp(start, "char", LEN_CHAR)) {
 				cur = new_token(TK_CHAR, cur, start, len);
 			} else if (len == LEN_SIZEOF && !memcmp(start, "sizeof", LEN_SIZEOF)) {
 				cur = new_token(TK_SIZEOF, cur, start, len);
+			} else if (len == LEN_STRUCT && !memcmp(start, "struct", LEN_STRUCT)) {
+				cur = new_token(TK_STRUCT, cur, start, len);
 			} else if (len == LEN_BREAK && !memcmp(start, "break", LEN_BREAK)) {
 				cur = new_token(TK_BREAK, cur, start, len);
 			} else if (len == LEN_CONTINUE && !memcmp(start, "continue", LEN_CONTINUE)) {
@@ -343,6 +358,27 @@ GVar* find_gvar(Token* tok) {
 	for (GVar* var = globals; var; var = var->next) {
 		if (var->len == tok->len && !memcmp(tok->str, var->name, var->len)) {
 			return var;
+		}
+	}
+	return NULL;
+}
+
+// 構造体定義を名前で検索する。見つからなかった場合はNULLを返す。
+StructDef* find_struct(Token* tok) {
+	for (StructDef* def = struct_defs; def; def = def->next) {
+		if (def->name_len == tok->len && !memcmp(tok->str, def->name, def->name_len)) {
+			return def;
+		}
+	}
+	return NULL;
+}
+
+// 構造体のメンバを名前で検索する。見つからなかった場合はNULLを返す。
+Member* find_member(StructDef* struct_def, Token* tok) {
+	if (!struct_def) return NULL;
+	for (Member* member = struct_def->members; member; member = member->next) {
+		if (member->name_len == tok->len && !memcmp(tok->str, member->name, member->name_len)) {
+			return member;
 		}
 	}
 	return NULL;
@@ -416,6 +452,13 @@ bool consume_for() {
 	return true;
 }
 
+bool consume_void() {
+	if (token->kind != TK_VOID)
+		return false;
+	token = token->next;
+	return true;
+}
+
 bool consume_int() {
 	if (token->kind != TK_INT)
 		return false;
@@ -437,14 +480,36 @@ bool consume_sizeof() {
 	return true;
 }
 
-// 基本型（int, char）をパースする関数。ポインタの*はパースしない。
+bool consume_struct() {
+	if (token->kind != TK_STRUCT)
+		return false;
+	token = token->next;
+	return true;
+}
+
+// 基本型（void, int, char, struct）をパースする関数。ポインタの*はパースしない。
 Type* parse_type_prefix() {
 	Type* base_type;
 	
-	if (consume_int()) {
+	if (consume_void()) {
+		base_type = new_type(TY_VOID);
+	} else if (consume_int()) {
 		base_type = new_type(TY_INT);
 	} else if (consume_char()) {
 		base_type = new_type(TY_CHAR);
+	} else if (consume_struct()) {
+		// struct型の処理
+		Token* struct_name = consume_ident();
+		if (!struct_name) {
+			error("struct name expected");
+		}
+		
+		StructDef* struct_def = find_struct(struct_name);
+		if (!struct_def) {
+			error("undefined struct");
+		}
+		
+		base_type = struct_to(struct_def);
 	} else {
 		error("type expected");
 	}
@@ -599,8 +664,8 @@ Node* expr() {
 }
 Node* stmt() {
 	Node* node;
-	if (token->kind == TK_INT || token->kind == TK_CHAR) {
-		// 変数宣言: int a, b; int* ptr; char* str; int arr[10]; など
+	if (token->kind == TK_VOID || token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_STRUCT) {
+		// 変数宣言: void* ptr; int a, b; int* ptr; char* str; int arr[10]; struct Point p; など
 		Type* base_type = parse_type();
 		
 		// 複数の変数宣言を処理するためのブロックノードを作成
@@ -680,7 +745,13 @@ Node* stmt() {
 	if (consume_return()) {
 		node = calloc(1, sizeof(Node));
 		node->kind = ND_RETURN;
-		node->lhs = expr();
+		// セミコロンまでに式があるかチェック
+		if (token->kind != TK_RESERVED || token->len != 1 || *token->str != ';') {
+			node->lhs = expr();
+		} else {
+			// return; の場合（void関数用）
+			node->lhs = NULL;
+		}
 		expect(";");
 		return node;
 	}
@@ -842,9 +913,88 @@ Node* function() {
 	return node;
 }
 
+// 構造体定義をパースする
+void parse_struct_def() {
+	// struct ident { member_list } ;
+	if (!consume_struct()) {
+		error("expected 'struct'");
+	}
+	
+	Token* name_tok = consume_ident();
+	if (!name_tok) {
+		error("struct name expected");
+	}
+	
+	expect("{");
+	
+	// 構造体定義を作成
+	StructDef* struct_def = calloc(1, sizeof(StructDef));
+	struct_def->name = calloc(name_tok->len + 1, sizeof(char));
+	memcpy(struct_def->name, name_tok->str, name_tok->len);
+	struct_def->name_len = name_tok->len;
+	struct_def->members = NULL;
+	struct_def->size = 0;
+	
+	Member* members_tail = NULL;  // メンバリストの末尾追跡
+	int offset = 0;  // 現在のオフセット
+	
+	// メンバの解析
+	while (!consume("}")) {
+		Type* member_type = parse_type();
+		
+		// 複数のメンバを同じ型で宣言できるように処理
+		do {
+			Token* member_tok = consume_ident();
+			if (!member_tok) {
+				error("member name expected");
+			}
+			
+			// メンバを作成
+			Member* member = calloc(1, sizeof(Member));
+			member->name = calloc(member_tok->len + 1, sizeof(char));
+			memcpy(member->name, member_tok->str, member_tok->len);
+			member->name_len = member_tok->len;
+			member->type = member_type;
+			member->offset = offset;
+			member->next = NULL;
+			
+			// メンバリストに追加（順番を保持）
+			if (!struct_def->members) {
+				struct_def->members = member;
+				members_tail = member;
+			} else {
+				members_tail->next = member;
+				members_tail = member;
+			}
+			
+			// オフセットを更新（4バイト境界にアライメント）
+			int member_size = size_of(member_type);
+			if (member_size < MIN_ALIGNMENT) member_size = MIN_ALIGNMENT;
+			offset += member_size;
+			
+		} while (consume(","));
+		
+		expect(";");
+	}
+	
+	struct_def->size = offset;
+	
+	// 構造体定義をグローバルリストに追加
+	struct_def->next = struct_defs;
+	struct_defs = struct_def;
+	
+	expect(";");
+}
+
 void program() {
 	int i = 0;
 	while (!at_eof()) {
+		// 構造体定義のチェック
+		if (token->kind == TK_STRUCT) {
+			parse_struct_def();
+			continue;
+		}
+		
 		// 型プレフィックスを先読み
 		Token* saved_token = token;
 		Type* type_prefix = parse_type_prefix();
@@ -1152,21 +1302,46 @@ Node* unary() {
 Node* postfix() {
 	Node* node = primary();
 	
-	// 後置インクリメント
-	if (token->kind == TK_INC) {
-		token = token->next;
-		Node* inc_node = calloc(1, sizeof(Node));
-		inc_node->kind = ND_POST_INC;
-		inc_node->lhs = node;
-		return inc_node;
-	}
-	// 後置デクリメント
-	if (token->kind == TK_DEC) {
-		token = token->next;
-		Node* dec_node = calloc(1, sizeof(Node));
-		dec_node->kind = ND_POST_DEC;
-		dec_node->lhs = node;
-		return dec_node;
+	while (1) {
+		// 後置インクリメント
+		if (token->kind == TK_INC) {
+			token = token->next;
+			Node* inc_node = calloc(1, sizeof(Node));
+			inc_node->kind = ND_POST_INC;
+			inc_node->lhs = node;
+			node = inc_node;
+			continue;
+		}
+		// 後置デクリメント
+		if (token->kind == TK_DEC) {
+			token = token->next;
+			Node* dec_node = calloc(1, sizeof(Node));
+			dec_node->kind = ND_POST_DEC;
+			dec_node->lhs = node;
+			node = dec_node;
+			continue;
+		}
+		// メンバアクセス
+		if (consume(".")) {
+			Token* member_tok = consume_ident();
+			if (!member_tok) {
+				error("member name expected");
+			}
+			
+			Node* member_node = calloc(1, sizeof(Node));
+			member_node->kind = ND_MEMBER;
+			member_node->lhs = node;  // 構造体オブジェクト
+			
+			// メンバ名をコピー
+			char* member_name = calloc(member_tok->len + 1, sizeof(char));
+			memcpy(member_name, member_tok->str, member_tok->len);
+			member_node->name = member_name;
+			
+			node = member_node;
+			continue;
+		}
+		
+		break;
 	}
 	
 	return node;

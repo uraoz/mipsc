@@ -5,6 +5,7 @@ Token* token; // 現在読んでいるtoken
 LVar* locals; // ローカル変数のリスト
 GVar* globals; // グローバル変数のリスト
 Function* functions; // 関数のリスト
+StructDef* struct_defs; // 構造体定義のリスト
 char* current_func_name; // 現在コード生成中の関数名
 int current_frame_size; // 現在の関数のフレームサイズ
 int label_count = 0; // ラベル生成用のカウンタ
@@ -76,6 +77,7 @@ int main(int argc, char** argv) {
 	locals = NULL;
 	globals = NULL;
 	functions = NULL;
+	struct_defs = NULL;
 	current_func_name = NULL;
 	string_literals = NULL;
 	program();

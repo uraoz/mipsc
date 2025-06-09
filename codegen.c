@@ -105,6 +105,31 @@ void gen_lval(Node* node) {
 		// *ptr の左辺値は ptr の値（アドレス）
 		gen(node->lhs);
 		return;
+	case ND_MEMBER: {
+		// obj.member の左辺値はメンバのアドレス
+		gen_lval(node->lhs);  // 構造体オブジェクトのアドレスを取得
+		
+		// 構造体の型を取得してメンバオフセットを計算
+		Type* struct_type = get_type(node->lhs);
+		if (struct_type->ty != TY_STRUCT) {
+			error("member access on non-struct type");
+		}
+		
+		// メンバを検索
+		Token member_tok;
+		member_tok.str = node->name;
+		member_tok.len = strlen(node->name);
+		Member* member = find_member(struct_type->struct_def, &member_tok);
+		if (!member) {
+			error("undefined member");
+		}
+		
+		// ベースアドレス + メンバオフセット
+		printf("	lw $t0, 0($sp)\n");           // ベースアドレスを$t0に
+		printf("	addiu $t0, $t0, %d\n", member->offset);  // メンバオフセットを追加
+		printf("	sw $t0, 0($sp)\n");           // 結果をスタックに格納
+		return;
+	}
 	default:
 		error("not left value");
 	}
@@ -366,9 +391,15 @@ void gen(Node* node) {
 		return;
 	}
 	case ND_RETURN: {
-		gen(node->lhs);
-		printf("	lw $v0, 0($sp)\n");
-		printf("	addiu $sp, $sp, 4\n");
+		if (node->lhs) {
+			// 戻り値がある場合
+			gen(node->lhs);
+			printf("	lw $v0, 0($sp)\n");
+			printf("	addiu $sp, $sp, 4\n");
+		} else {
+			// void関数のreturn;の場合
+			printf("	li $v0, 0\n");
+		}
 		
 		// 統一された関数エピローグ
 		printf("	lw $ra, %d($s8)\n", 4);  // $s8+4から$ra復元
@@ -507,6 +538,14 @@ void gen(Node* node) {
 			error("continue statement not within a loop");
 		}
 		printf("	j .Lcontinue%d\n", loop_stack->continue_label);
+		return;
+	}
+	case ND_MEMBER: {
+		// メンバアクセス: obj.member
+		gen_lval(node);  // メンバのアドレスを取得
+		printf("	lw $t0, 0($sp)\n");     // アドレスを$t0に
+		printf("	lw $t0, 0($t0)\n");     // メンバの値を$t0に読み込み
+		printf("	sw $t0, 0($sp)\n");     // 結果をスタックに格納
 		return;
 	}
 	}

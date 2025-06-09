@@ -29,9 +29,11 @@
 #define LEN_ELSE 4
 #define LEN_WHILE 5
 #define LEN_FOR 3
+#define LEN_VOID 4
 #define LEN_INT 3
 #define LEN_CHAR 4
 #define LEN_SIZEOF 6
+#define LEN_STRUCT 6
 #define LEN_BREAK 5
 #define LEN_CONTINUE 8
 
@@ -55,6 +57,7 @@ typedef enum {
 	TK_ELSE, // else
 	TK_WHILE, // while
 	TK_FOR, // for
+	TK_VOID, // void
 	TK_INT, // int
 	TK_CHAR, // char
 	TK_SIZEOF, // sizeof
@@ -135,12 +138,16 @@ typedef enum {
 
 // 型の種類を表すenum
 typedef enum {
+	TY_VOID,   // void型
 	TY_INT,    // int型
 	TY_PTR,    // ポインタ型
 	TY_CHAR,   // char型
 	TY_ARRAY,  // 配列型
 	TY_STRUCT, // 構造体型
 } TypeKind;
+
+// 前方宣言
+typedef struct Type Type;
 
 // 構造体のメンバを表す構造体
 typedef struct Member Member;
@@ -263,6 +270,7 @@ bool consume_continue();
 bool consume_if();
 bool consume_while();
 bool consume_for();
+bool consume_void();
 bool consume_int();
 bool consume_char();
 bool consume_sizeof();
