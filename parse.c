@@ -531,7 +531,10 @@ Node* new_node_num(int val) {
 // ノードのパーサ
 /*
 program    = stmt*
-stmt       = "return" expr ";" | "if" "(" expr ")" stmt | "while" "(" expr ")" stmt | "for" "(" expr? ";" expr? ";" expr? ")" stmt | "{" stmt* "}" | expr ";"
+stmt       = declaration | "return" expr ";" | "if" "(" expr ")" stmt | "while" "(" expr ")" stmt | "for" "(" expr? ";" expr? ";" expr? ")" stmt | "{" stmt* "}" | expr ";"
+declaration = type_spec declarator ("," declarator)* ";"
+declarator = ident ("[" num "]")? ("=" expr)?
+type_spec  = "int" | "char" | type_spec "*"
 expr       = assign
 assign     = equality ("=" assign)?
 equality   = relational ("==" relational | "!=" relational)*
@@ -597,60 +600,82 @@ Node* expr() {
 Node* stmt() {
 	Node* node;
 	if (token->kind == TK_INT || token->kind == TK_CHAR) {
-		// 変数宣言: int varname; int* ptr; char* str; int arr[10]; など
-		Type* type = parse_type();
-		Token* tok = consume_ident();
-		if (!tok) {
-			error("variable name expected");
-		}
+		// 変数宣言: int a, b; int* ptr; char* str; int arr[10]; など
+		Type* base_type = parse_type();
 		
-		// 配列宣言のチェック: int name[size]
-		if (consume("[")) {
-			int array_size = expect_number();
-			expect("]");
-			type = array_to(type, array_size);
-		}
+		// 複数の変数宣言を処理するためのブロックノードを作成
+		Node* block = calloc(1, sizeof(Node));
+		block->kind = ND_BLOCK;
+		block->body = calloc(MAX_STATEMENTS, sizeof(Node*));
+		int stmt_count = 0;
 		
-		// 新しい変数をローカル変数リストに追加
-		LVar* lvar = calloc(1, sizeof(LVar));
-		lvar->next = locals;
-		lvar->name = tok->str;
-		lvar->len = tok->len;
-		lvar->type = type;
-		
-		// 現在の関数のローカル変数のオフセットを計算（型のサイズを考慮）
-		int min_offset = ARG_SAVE_OFFSET;  // 引数保存領域の下から開始
-		for (LVar* v = locals; v; v = v->next) {
-			if (v->offset < min_offset) {
-				min_offset = v->offset;
+		// 最初の変数を処理
+		do {
+			Token* tok = consume_ident();
+			if (!tok) {
+				error("variable name expected");
 			}
-		}
-		// 型のサイズでアライメント調整（とりあえず4バイト境界）
-		int var_size = size_of(type);
-		if (var_size < MIN_ALIGNMENT) var_size = MIN_ALIGNMENT; // 最小4バイトでアライメント
-		lvar->offset = min_offset - var_size;
-		locals = lvar;
-		
-		// 初期化があるかチェック
-		if (consume("=")) {
-			// int x = 10; の形式
-			Node* var_node = calloc(1, sizeof(Node));
-			var_node->kind = ND_LVAR;
-			var_node->offset = lvar->offset;
-			var_node->type = type;
 			
-			Node* init_expr = expr();
-			node = new_node(ND_ASSIGN, var_node, init_expr);
-			expect(";");
-		} else {
-			// int x; の形式（初期化なし）
-			expect(";");
-			// 空のノードを返す（宣言は実行時に何もしない）
-			node = calloc(1, sizeof(Node));
-			node->kind = ND_NUM;
-			node->val = 0;
+			Type* var_type = base_type;
+			
+			// 配列宣言のチェック: int name[size]
+			if (consume("[")) {
+				int array_size = expect_number();
+				expect("]");
+				var_type = array_to(base_type, array_size);
+			}
+			
+			// 新しい変数をローカル変数リストに追加
+			LVar* lvar = calloc(1, sizeof(LVar));
+			lvar->next = locals;
+			lvar->name = tok->str;
+			lvar->len = tok->len;
+			lvar->type = var_type;
+			
+			// 現在の関数のローカル変数のオフセットを計算（型のサイズを考慮）
+			int min_offset = ARG_SAVE_OFFSET;  // 引数保存領域の下から開始
+			for (LVar* v = locals; v; v = v->next) {
+				if (v->offset < min_offset) {
+					min_offset = v->offset;
+				}
+			}
+			// 型のサイズでアライメント調整（とりあえず4バイト境界）
+			int var_size = size_of(var_type);
+			if (var_size < MIN_ALIGNMENT) var_size = MIN_ALIGNMENT; // 最小4バイトでアライメント
+			lvar->offset = min_offset - var_size;
+			locals = lvar;
+			
+			// 初期化があるかチェック
+			if (consume("=")) {
+				// int x = 10; の形式
+				Node* var_node = calloc(1, sizeof(Node));
+				var_node->kind = ND_LVAR;
+				var_node->offset = lvar->offset;
+				var_node->type = var_type;
+				
+				Node* init_expr = expr();
+				Node* assign_node = new_node(ND_ASSIGN, var_node, init_expr);
+				block->body[stmt_count++] = assign_node;
+			} else {
+				// int x; の形式（初期化なし）- 何もしない
+				Node* empty_node = calloc(1, sizeof(Node));
+				empty_node->kind = ND_NUM;
+				empty_node->val = 0;
+				block->body[stmt_count++] = empty_node;
+			}
+			
+			// カンマがあれば次の変数へ、なければ終了
+		} while (consume(","));
+		
+		expect(";");
+		
+		// 単一の宣言の場合は直接返す
+		if (stmt_count == 1) {
+			return block->body[0];
 		}
-		return node;
+		
+		// 複数の宣言の場合はブロックノードとして返す
+		return block;
 	}
 	if (consume_return()) {
 		node = calloc(1, sizeof(Node));

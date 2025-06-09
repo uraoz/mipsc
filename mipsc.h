@@ -58,6 +58,8 @@ typedef enum {
 	TK_INT, // int
 	TK_CHAR, // char
 	TK_SIZEOF, // sizeof
+	TK_STRUCT, // struct
+	TK_TYPEDEF, // typedef
 	TK_ADD_ASSIGN, // +=
 	TK_SUB_ASSIGN, // -=
 	TK_MUL_ASSIGN, // *=
@@ -127,22 +129,46 @@ typedef enum {
 	ND_TERNARY, // 三項演算子 ? :
 	ND_BREAK, // break文
 	ND_CONTINUE, // continue文
+	ND_MEMBER, // メンバアクセス (.)
+	ND_STRUCT_DEF, // 構造体定義
 } NodeKind;
 
 // 型の種類を表すenum
 typedef enum {
-	TY_INT,   // int型
-	TY_PTR,   // ポインタ型
-	TY_CHAR,  // char型
-	TY_ARRAY, // 配列型
+	TY_INT,    // int型
+	TY_PTR,    // ポインタ型
+	TY_CHAR,   // char型
+	TY_ARRAY,  // 配列型
+	TY_STRUCT, // 構造体型
 } TypeKind;
+
+// 構造体のメンバを表す構造体
+typedef struct Member Member;
+struct Member {
+	Member* next;     // 次のメンバ
+	char* name;       // メンバ名
+	int name_len;     // メンバ名の長さ
+	Type* type;       // メンバの型
+	int offset;       // 構造体の先頭からのオフセット
+};
+
+// 構造体の定義を表す構造体
+typedef struct StructDef StructDef;
+struct StructDef {
+	StructDef* next;  // 次の構造体定義
+	char* name;       // 構造体名
+	int name_len;     // 構造体名の長さ
+	Member* members;  // メンバのリスト
+	int size;         // 構造体全体のサイズ
+};
 
 // 型を表す構造体
 typedef struct Type Type;
 struct Type {
-	TypeKind ty;      // 型の種類
-	Type* ptr_to;     // ポインタが指す型（ポインタ型の場合のみ）
+	TypeKind ty;       // 型の種類
+	Type* ptr_to;      // ポインタが指す型（ポインタ型の場合のみ）
 	size_t array_size; // 配列のサイズ（配列型の場合のみ）
+	StructDef* struct_def; // 構造体定義（構造体型の場合のみ）
 };
 
 typedef struct Node Node;
@@ -219,6 +245,7 @@ extern Token* token; // 現在読んでいるtoken
 extern LVar* locals; // ローカル変数のリスト
 extern GVar* globals; // グローバル変数のリスト
 extern Function* functions; // 関数のリスト
+extern StructDef* struct_defs; // 構造体定義のリスト
 extern char* current_func_name; // 現在コード生成中の関数名
 extern int current_frame_size; // 現在の関数のフレームサイズ
 extern int label_count; // ラベル生成用のカウンタ
@@ -239,6 +266,8 @@ bool consume_for();
 bool consume_int();
 bool consume_char();
 bool consume_sizeof();
+bool consume_struct();
+bool consume_typedef();
 void expect(char* op);
 int expect_number();
 bool at_eof();
@@ -261,12 +290,15 @@ Node* new_node_num(int val);
 LVar* find_lvar(Token* tok);
 GVar* find_gvar(Token* tok);
 Function* find_function(Token* tok);
+StructDef* find_struct(Token* tok);
+Member* find_member(StructDef* struct_def, Token* tok);
 Type* parse_type_prefix();
 
 // 型管理関連の関数
 Type* new_type(TypeKind ty);
 Type* pointer_to(Type* base);
 Type* array_to(Type* base, size_t size);
+Type* struct_to(StructDef* struct_def);
 bool is_integer(Type* ty);
 int size_of(Type* ty);
 Type* parse_type();

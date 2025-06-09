@@ -316,6 +316,27 @@ test_gcc "int main() { char c = 'A'; return c; }"
 test_gcc "int main() { char a = '5'; char b = '0'; return a - b; }"
 
 echo ""
+echo "=== PART 12.5: 複数変数宣言テスト ==="
+echo ""
+
+# 基本的な複数変数宣言
+test_gcc 'int main() { int a, b; a = 1; b = 2; return a + b; }'
+test_gcc 'int main() { int x, y, z; x = 5; y = 10; z = 15; return x + y + z; }'
+
+# 複数変数宣言と初期化の混在
+test_gcc 'int main() { int a = 1, b; b = 2; return a + b; }'
+test_gcc 'int main() { int x, y = 5, z; x = 1; z = 3; return x + y + z; }'
+test_gcc 'int main() { int a = 1, b = 2, c = 3; return a + b + c; }'
+
+# char型の複数変数宣言
+test_gcc "int main() { char a, b; a = 'X'; b = 'Y'; return a - b; }"
+test_gcc "int main() { char x = 'A', y = 'B'; return x + y; }"
+
+# 複数変数宣言後の操作
+test_gcc 'int main() { int a, b, c; a = 10; b = 20; c = a * b; return c; }'
+test_gcc 'int main() { int x = 5, y = 3, z; z = x * y; return z + 1; }'
+
+echo ""
 echo "=== PART 13: インクリメント/デクリメント演算子テスト ==="
 echo ""
 
