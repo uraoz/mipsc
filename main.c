@@ -10,6 +10,7 @@ int current_frame_size; // 現在の関数のフレームサイズ
 int label_count = 0; // ラベル生成用のカウンタ
 int string_count = 0; // 文字列ラベル生成用のカウンタ
 StringLiteral* string_literals = NULL; // 文字列リテラルのリスト
+LoopLabel* loop_stack = NULL; // ループラベルスタック
 
 void error(char* fmt, ...) {
 	va_list ap;

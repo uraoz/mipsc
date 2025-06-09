@@ -32,6 +32,8 @@
 #define LEN_INT 3
 #define LEN_CHAR 4
 #define LEN_SIZEOF 6
+#define LEN_BREAK 5
+#define LEN_CONTINUE 8
 
 // コメント関連
 #define COMMENT_LINE_START "//"
@@ -67,6 +69,8 @@ typedef enum {
 	TK_NOT, // !
 	TK_QUESTION, // ?
 	TK_COLON, // :
+	TK_BREAK, // break
+	TK_CONTINUE, // continue
 	TK_EOF, // 入力の終わり
 } TokenKind;
 
@@ -89,6 +93,7 @@ typedef enum {
 	ND_SUB, // 減算
 	ND_MUL, // 乗算
 	ND_DIV, // 除算
+	ND_MOD, // 剰余
 	ND_NUM, // 整数
 	ND_EQ, // 等しい
 	ND_NE, // 等しくない
@@ -120,6 +125,8 @@ typedef enum {
 	ND_OR, // 論理OR ||
 	ND_NOT, // 論理NOT !
 	ND_TERNARY, // 三項演算子 ? :
+	ND_BREAK, // break文
+	ND_CONTINUE, // continue文
 } NodeKind;
 
 // 型の種類を表すenum
@@ -199,6 +206,14 @@ struct Function {
 	LVar* locals; // その関数のローカル変数
 };
 
+// ループラベル管理構造
+typedef struct LoopLabel LoopLabel;
+struct LoopLabel {
+	int break_label;    // breakのジャンプ先ラベル
+	int continue_label; // continueのジャンプ先ラベル
+	LoopLabel* next;    // ネストしたループ用のスタック
+};
+
 extern char* user_input; // 入力文字列
 extern Token* token; // 現在読んでいるtoken
 extern LVar* locals; // ローカル変数のリスト
@@ -209,12 +224,15 @@ extern int current_frame_size; // 現在の関数のフレームサイズ
 extern int label_count; // ラベル生成用のカウンタ
 extern int string_count; // 文字列ラベル生成用のカウンタ
 extern StringLiteral* string_literals; // 文字列リテラルのリスト
+extern LoopLabel* loop_stack; // ループラベルスタック
 
 // パーサ関連の関数
 Token* tokenize(char* p);
 Token* consume_ident();
 bool consume(char* op);
 bool consume_return();
+bool consume_break();
+bool consume_continue();
 bool consume_if();
 bool consume_while();
 bool consume_for();
@@ -260,5 +278,9 @@ void gen_lval(Node* node);
 void gen_compound_assign(Node* node, const char* operation, bool is_div);
 void gen_inc_dec(Node* node, int delta, bool is_prefix);
 void gen_variable_access(Node* node, bool is_local);
+
+// ループラベル管理関数
+void push_loop_labels(int break_label, int continue_label);
+void pop_loop_labels();
 
 #endif // MIPSC_H

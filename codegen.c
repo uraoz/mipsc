@@ -307,18 +307,34 @@ void gen(Node* node) {
 	}
 	case ND_WHILE: {
 		int seq = label_count++;
+		int break_label = seq;
+		int continue_label = seq;
+		
+		// ループラベルをスタックにプッシュ
+		push_loop_labels(break_label, continue_label);
+		
 		printf(".L_begin_%d:\n", seq);
+		printf(".Lcontinue%d:\n", continue_label);  // continue先
 		gen(node->cond);
 		printf("	lw $t0, 0($sp)\n");
 		printf("	addiu $sp, $sp, 4\n");
-		printf("	beq $t0, $zero, .L_end_%d\n", seq);
+		printf("	beq $t0, $zero, .Lbreak%d\n", break_label);  // break先
 		gen(node->then);
 		printf("	j .L_begin_%d\n", seq);
-		printf(".L_end_%d:\n", seq);
+		printf(".Lbreak%d:\n", break_label);  // break先ラベル
+		
+		// ループラベルをスタックからポップ
+		pop_loop_labels();
 		return;
 	}
 	case ND_FOR: {
 		int seq = label_count++;
+		int break_label = seq;
+		int continue_label = label_count++;  // for文のcontinueは別ラベル
+		
+		// ループラベルをスタックにプッシュ
+		push_loop_labels(break_label, continue_label);
+		
 		// 初期化
 		if (node->init) {
 			gen(node->init);
@@ -331,18 +347,22 @@ void gen(Node* node) {
 			gen(node->cond);
 			printf("	lw $t0, 0($sp)\n");
 			printf("	addiu $sp, $sp, 4\n");
-			printf("	beq $t0, $zero, .L_end_%d\n", seq);
+			printf("	beq $t0, $zero, .Lbreak%d\n", break_label);
 		}
 		// ボディ実行
 		gen(node->then);
-		// インクリメント
+		// continue先ラベル（インクリメント処理）
+		printf(".Lcontinue%d:\n", continue_label);
 		if (node->inc) {
 			gen(node->inc);
 			printf("	lw $t0, 0($sp)\n");
 			printf("	addiu $sp, $sp, 4\n");
 		}
 		printf("	j .L_begin_%d\n", seq);
-		printf(".L_end_%d:\n", seq);
+		printf(".Lbreak%d:\n", break_label);
+		
+		// ループラベルをスタックからポップ
+		pop_loop_labels();
 		return;
 	}
 	case ND_RETURN: {
@@ -473,6 +493,22 @@ void gen(Node* node) {
 		printf(".Lend%d:\n", label);
 		return;
 	}
+	case ND_BREAK: {
+		// 現在のループのbreak先にジャンプ
+		if (!loop_stack) {
+			error("break statement not within a loop");
+		}
+		printf("	j .Lbreak%d\n", loop_stack->break_label);
+		return;
+	}
+	case ND_CONTINUE: {
+		// 現在のループのcontinue先にジャンプ
+		if (!loop_stack) {
+			error("continue statement not within a loop");
+		}
+		printf("	j .Lcontinue%d\n", loop_stack->continue_label);
+		return;
+	}
 	}
 	
 	// 二項演算子の処理
@@ -517,6 +553,10 @@ void gen(Node* node) {
 	case ND_DIV:
 		printf("	div $t0, $t1\n");
 		printf("	mflo $t0\n");
+		break;
+	case ND_MOD:
+		printf("	div $t0, $t1\n");
+		printf("	mfhi $t0\n");
 		break;
 	case ND_EQ:
 		printf("	seq $t0, $t0, $t1\n");

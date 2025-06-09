@@ -283,7 +283,7 @@ Token* tokenize(char* p) {
 			continue;
 		}
 		//一文字の記号
-		if (strchr("+-*/()<>;={},&[]", *p)) {
+		if (strchr("+-*/%()<>;={},&[]", *p)) {
 			cur = new_token(TK_RESERVED, cur, p, 1);
 			p++;
 			continue;
@@ -311,6 +311,10 @@ Token* tokenize(char* p) {
 				cur = new_token(TK_CHAR, cur, start, len);
 			} else if (len == LEN_SIZEOF && !memcmp(start, "sizeof", LEN_SIZEOF)) {
 				cur = new_token(TK_SIZEOF, cur, start, len);
+			} else if (len == LEN_BREAK && !memcmp(start, "break", LEN_BREAK)) {
+				cur = new_token(TK_BREAK, cur, start, len);
+			} else if (len == LEN_CONTINUE && !memcmp(start, "continue", LEN_CONTINUE)) {
+				cur = new_token(TK_CONTINUE, cur, start, len);
 			} else {
 				cur = new_token(TK_IDENT, cur, start, len);
 			}
@@ -357,6 +361,38 @@ bool consume_return() {
 		return false;
 	token = token->next;
 	return true;
+}
+
+bool consume_break() {
+	if (token->kind != TK_BREAK)
+		return false;
+	token = token->next;
+	return true;
+}
+
+bool consume_continue() {
+	if (token->kind != TK_CONTINUE)
+		return false;
+	token = token->next;
+	return true;
+}
+
+// ループラベル管理関数
+void push_loop_labels(int break_label, int continue_label) {
+	LoopLabel* label = calloc(1, sizeof(LoopLabel));
+	label->break_label = break_label;
+	label->continue_label = continue_label;
+	label->next = loop_stack;
+	loop_stack = label;
+}
+
+void pop_loop_labels() {
+	if (!loop_stack) {
+		error("internal error: no loop labels to pop");
+	}
+	LoopLabel* old = loop_stack;
+	loop_stack = loop_stack->next;
+	free(old);
 }
 
 bool consume_if() {
@@ -620,6 +656,20 @@ Node* stmt() {
 		node = calloc(1, sizeof(Node));
 		node->kind = ND_RETURN;
 		node->lhs = expr();
+		expect(";");
+		return node;
+	}
+	if (consume_break()) {
+		// ループ内チェックはコード生成段階で実行
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_BREAK;
+		expect(";");
+		return node;
+	}
+	if (consume_continue()) {
+		// ループ内チェックはコード生成段階で実行
+		node = calloc(1, sizeof(Node));
+		node->kind = ND_CONTINUE;
 		expect(";");
 		return node;
 	}
@@ -898,6 +948,10 @@ Node* mul() {
 		}
 		if (consume("/")) {
 			node = new_node(ND_DIV, node, unary());
+			continue;
+		}
+		if (consume("%")) {
+			node = new_node(ND_MOD, node, unary());
 			continue;
 		}
 		break;
