@@ -80,11 +80,15 @@ int main(int argc, char** argv) {
 	struct_defs = NULL;
 	current_func_name = NULL;
 	string_literals = NULL;
+	loop_stack = NULL;
 	program();
 
 	// アセンブリの前半部を出力
 	printf(".data\n");
 	printf("stack: .space 4096\n");
+	
+	// printf用バッファ
+	printf(".L_char_buffer: .space 4\n");
 	
 	// グローバル変数を出力
 	for (GVar* var = globals; var; var = var->next) {
@@ -103,7 +107,7 @@ int main(int argc, char** argv) {
 	printf("	li $v0, 4001\n");
 	printf("	syscall\n");
 	
-	//すべての関数を出力
+	// すべての関数を出力
 	for (int i = 0; code[i]; i++) {
 		gen(code[i]);
 	}

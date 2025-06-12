@@ -29,6 +29,9 @@ test_gcc(){
         echo "❌ $program => Our: $our_exit, GCC: $gcc_exit"
         return 1
     fi
+    
+    # 一時ファイルをクリーンアップ
+    rm -f tmp_our.s tmp_our tmp_gcc.c tmp_gcc 2>/dev/null
 }
 
 # GCCとの比較テスト関数（詳細版）
@@ -79,6 +82,9 @@ compare_with_gcc(){
     
     echo "==============================================="
     echo ""
+    
+    # 一時ファイルをクリーンアップ
+    rm -f tmp_our.s tmp_our tmp_gcc.c tmp_gcc 2>/dev/null
 }
 
 # printf専用テスト関数
@@ -112,6 +118,9 @@ test_printf(){
     
     echo "==============================================="
     echo ""
+    
+    # 一時ファイルをクリーンアップ
+    rm -f tmp_printf.s tmp_printf 2>/dev/null
 }
 
 echo "########################################"
@@ -219,6 +228,7 @@ if echo "$output" | grep -q "Line1" && echo "$output" | grep -q "Line2"; then
 else
     echo "❌ String newline escape sequences failed"
 fi
+rm -f tmp.s tmp 2>/dev/null
 
 # タブ文字のテスト
 echo "Testing tab in string..."
@@ -230,6 +240,7 @@ if echo "$output" | grep -q "A.*B.*C"; then
 else
     echo "❌ String tab escape sequences failed"
 fi
+rm -f tmp.s tmp 2>/dev/null
 
 # 引用符のテスト
 echo "Testing quote escape in string..."
@@ -241,6 +252,7 @@ if echo "$output" | grep -q 'Say "Hello"'; then
 else
     echo "❌ String quote escape sequences failed"
 fi
+rm -f tmp.s tmp 2>/dev/null
 
 echo ""
 echo "=== PART 10: if-else文テスト ==="
@@ -382,6 +394,7 @@ if [ "$result" = "120" ]; then
 else
     echo "❌ sample.c (factorial): expected 120, got $result"
 fi
+rm -f tmp.s tmp 2>/dev/null
 
 # test_input.cファイルのテスト  
 echo "Testing test_input.c compilation..."
@@ -393,6 +406,7 @@ if [ "$result" = "42" ]; then
 else
     echo "❌ test_input.c: expected 42, got $result"
 fi
+rm -f tmp.s tmp 2>/dev/null
 
 # 存在しないファイルのエラーテスト
 echo "Testing error handling for non-existent file..."
@@ -412,6 +426,7 @@ if [ "$result" = "77" ]; then
 else
     echo "❌ Direct string input: expected 77, got $result"
 fi
+rm -f tmp.s tmp 2>/dev/null
 
 echo ""
 echo "=== PART 15: 論理演算子テスト ==="

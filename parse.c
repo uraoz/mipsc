@@ -89,6 +89,23 @@ Token* new_token(TokenKind kind, Token* cur, char* str, int len) {
 	return tok;
 }
 
+// 組み込み関数の識別
+BuiltinKind get_builtin_kind(Token* tok) {
+	if (tok->len == 7 && memcmp(tok->str, "putchar", 7) == 0)
+		return BUILTIN_PUTCHAR;
+	if (tok->len == 7 && memcmp(tok->str, "getchar", 7) == 0)
+		return BUILTIN_GETCHAR;
+	if (tok->len == 4 && memcmp(tok->str, "puts", 4) == 0)
+		return BUILTIN_PUTS;
+	if (tok->len == 6 && memcmp(tok->str, "strlen", 6) == 0)
+		return BUILTIN_STRLEN;
+	if (tok->len == 6 && memcmp(tok->str, "strcmp", 6) == 0)
+		return BUILTIN_STRCMP;
+	if (tok->len == 6 && memcmp(tok->str, "strcpy", 6) == 0)
+		return BUILTIN_STRCPY;
+	return -1; // 組み込み関数ではない
+}
+
 bool startwith(char* p, char* str) {
 	return strncmp(p, str, strlen(str)) == 0;
 }
@@ -279,6 +296,12 @@ Token* tokenize(char* p) {
 		}
 		if (startwith(p, "--")) {
 			cur = new_token(TK_DEC, cur, p, 2);
+			p += 2;
+			continue;
+		}
+		// アロー演算子
+		if (startwith(p, "->")) {
+			cur = new_token(TK_ARROW, cur, p, 2);
 			p += 2;
 			continue;
 		}
@@ -1195,12 +1218,19 @@ Node* primary() {
 		// 関数呼び出しかチェック
 		if (consume("(")) {
 			Node* node = calloc(1, sizeof(Node));
-			node->kind = ND_CALL;
 			
-			// 関数名をコピー
-			char* fname = calloc(tok->len + 1, sizeof(char));
-			memcpy(fname, tok->str, tok->len);
-			node->name = fname;
+			// 組み込み関数かチェック
+			BuiltinKind builtin = get_builtin_kind(tok);
+			if (builtin != -1) {
+				node->kind = ND_BUILTIN_CALL;
+				node->builtin_kind = builtin;
+			} else {
+				node->kind = ND_CALL;
+				// 関数名をコピー
+				char* fname = calloc(tok->len + 1, sizeof(char));
+				memcpy(fname, tok->str, tok->len);
+				node->name = fname;
+			}
 			
 			// 引数の解析
 			Node** args = malloc(sizeof(Node*) * MAX_FUNCTION_ARGS); // 最大10引数
@@ -1321,7 +1351,7 @@ Node* postfix() {
 			node = dec_node;
 			continue;
 		}
-		// メンバアクセス
+		// メンバアクセス (.)
 		if (consume(".")) {
 			Token* member_tok = consume_ident();
 			if (!member_tok) {
@@ -1331,6 +1361,31 @@ Node* postfix() {
 			Node* member_node = calloc(1, sizeof(Node));
 			member_node->kind = ND_MEMBER;
 			member_node->lhs = node;  // 構造体オブジェクト
+			
+			// メンバ名をコピー
+			char* member_name = calloc(member_tok->len + 1, sizeof(char));
+			memcpy(member_name, member_tok->str, member_tok->len);
+			member_node->name = member_name;
+			
+			node = member_node;
+			continue;
+		}
+		// アロー演算子 (->)
+		if (token->kind == TK_ARROW) {
+			token = token->next;
+			Token* member_tok = consume_ident();
+			if (!member_tok) {
+				error("member name expected");
+			}
+			
+			// ptr->member を (*ptr).member に変換
+			Node* deref_node = calloc(1, sizeof(Node));
+			deref_node->kind = ND_DEREF;
+			deref_node->lhs = node;  // ポインタ
+			
+			Node* member_node = calloc(1, sizeof(Node));
+			member_node->kind = ND_MEMBER;
+			member_node->lhs = deref_node;  // *ptr
 			
 			// メンバ名をコピー
 			char* member_name = calloc(member_tok->len + 1, sizeof(char));

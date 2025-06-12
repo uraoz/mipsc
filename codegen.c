@@ -191,21 +191,6 @@ void gen(Node* node) {
 			}
 		}
 		
-		// ローカル変数領域を0クリア（コメントアウト）
-		/*
-		if (local_size > 0) {
-			// 負のオフセットでローカル変数にアクセスするため、スタックをクリア
-			printf("	li $t9, %d\n", local_size);
-			printf(".L_clear_loop_%s:\n", node->name);
-			printf("	beq $t9, $zero, .L_clear_end_%s\n", node->name);
-			printf("	sub $t8, $s8, $t9\n");
-			printf("	sw $zero, 0($t8)\n");
-			printf("	addiu $t9, $t9, -4\n");
-			printf("	j .L_clear_loop_%s\n", node->name);
-			printf(".L_clear_end_%s:\n", node->name);
-		}
-		*/
-		
 		// 関数本体の実行
 		bool has_return = false;
 		for (int i = 0; node->body[i]; i++) {
@@ -239,40 +224,15 @@ void gen(Node* node) {
 		locals = saved_locals;
 		return;
 	}
+	case ND_BUILTIN_CALL: {
+		// 組み込み関数の処理
+		gen_builtin_call(node);
+		return;
+	}
 	case ND_CALL: {
-		// printf関数の特別処理
+		// printf関数の特別処理（リファクタリング版）
 		if (strcmp(node->name, "printf") == 0) {
-			if (node->argc >= 1) {
-				// 第一引数（フォーマット文字列）を$a0に設定
-				gen(node->args[0]);
-				printf("	lw $a0, 0($sp)\n");
-				printf("	addiu $sp, $sp, 4\n");
-				
-				// 文字列長を動的に計算（strlenライクな処理）
-				int strlen_id = label_count++;
-				printf("	move $t1, $a0\n");      // 文字列アドレスを$t1にコピー
-				printf("	li $t2, 0\n");          // カウンタを0に初期化
-				printf(".strlen_loop_%d:\n", strlen_id);
-				printf("	lb $t3, 0($t1)\n");     // 1バイト読み込み
-				printf("	beq $t3, $zero, .strlen_end_%d\n", strlen_id); // null文字なら終了
-				printf("	addiu $t1, $t1, 1\n");  // アドレスを次へ
-				printf("	addiu $t2, $t2, 1\n");  // カウンタをインクリメント
-				printf("	j .strlen_loop_%d\n", strlen_id);
-				printf("	nop\n");
-				printf(".strlen_end_%d:\n", strlen_id);
-				
-				// MIPSシステムコール4004（write）を使用
-				printf("	move $a1, $a0\n");      // 文字列アドレスを$a1に
-				printf("	li $a0, 1\n");          // stdout (1) を$a0に
-				printf("	move $a2, $t2\n");      // 計算された文字列長を$a2に
-				printf("	li $v0, 4004\n");       // writeシステムコール
-				printf("	syscall\n");
-			}
-			
-			// printfの戻り値として適当な値（印刷した文字数など）をスタックにプッシュ
-			printf("	li $t0, 0\n");
-			printf("	addiu $sp, $sp, -4\n");
-			printf("	sw $t0, 0($sp)\n");
+			gen_printf_call(node);
 			return;
 		}
 		
@@ -654,3 +614,419 @@ void gen(Node* node) {
 	printf("	addiu $sp, $sp, -4\n");
 	printf("	sw $t0, 0($sp)\n");
 }
+
+// =============================================================================
+// printf実装の補助関数群
+// =============================================================================
+
+// writeシステムコール（1文字出力）
+void gen_write_syscall(void) {
+	printf("	li $a0, 1\n");              // stdout
+	printf("	la $a1, .L_char_buffer\n"); // バッファアドレス
+	printf("	li $a2, 1\n");              // 1バイト
+	printf("	li $v0, 4004\n");           // writeシステムコール
+	printf("	syscall\n");
+}
+
+// 1文字出力
+void gen_printf_char(int printf_id) {
+	printf(".printf_normal_char_%d:\n", printf_id);
+	printf("	sb $t3, .L_char_buffer\n");  // バイト単位で格納
+	gen_write_syscall();
+}
+
+// 整数出力（32bit対応）
+void gen_printf_integer(int printf_id, int arg_index) {
+	printf("	move $t6, $a1\n");           // 整数値を$t6に保存
+	
+	// 負数チェック
+	printf("	bgez $t6, .printf_positive_%d_%d\n", printf_id, arg_index);
+	
+	// マイナス符号を出力
+	printf("	li $t4, 45\n");             // '-' のASCII値
+	printf("	sb $t4, .L_char_buffer\n");
+	gen_write_syscall();
+	printf("	sub $t6, $zero, $t6\n");    // 絶対値を取得
+	
+	printf(".printf_positive_%d_%d:\n", printf_id, arg_index);
+	
+	// 0の特別処理
+	printf("	bnez $t6, .printf_nonzero_%d_%d\n", printf_id, arg_index);
+	printf("	li $t4, 48\n");             // '0' のASCII値
+	printf("	sb $t4, .L_char_buffer\n");
+	gen_write_syscall();
+	printf("	j .printf_int_done_%d_%d\n", printf_id, arg_index);
+	
+	printf(".printf_nonzero_%d_%d:\n", printf_id, arg_index);
+	
+	// 桁を逆順でスタックに積む
+	printf("	li $t7, 0\n");              // 桁数カウンタ
+	printf("	move $t5, $t6\n");          // 作業用コピー
+	
+	printf(".printf_digit_loop_%d_%d:\n", printf_id, arg_index);
+	printf("	beqz $t5, .printf_print_digits_%d_%d\n", printf_id, arg_index);
+	printf("	li $t9, 10\n");
+	printf("	div $t5, $t9\n");
+	printf("	mfhi $t4\n");               // 余り
+	printf("	mflo $t5\n");               // 商
+	printf("	addiu $t4, $t4, 48\n");     // ASCII変換
+	printf("	addiu $sp, $sp, -4\n");     // スタックに積む
+	printf("	sw $t4, 0($sp)\n");
+	printf("	addiu $t7, $t7, 1\n");      // 桁数増加
+	printf("	j .printf_digit_loop_%d_%d\n", printf_id, arg_index);
+	
+	// スタックから桁を取り出して出力
+	printf(".printf_print_digits_%d_%d:\n", printf_id, arg_index);
+	printf("	beqz $t7, .printf_int_done_%d_%d\n", printf_id, arg_index);
+	printf("	lw $t4, 0($sp)\n");         // 桁を取得
+	printf("	addiu $sp, $sp, 4\n");
+	printf("	sb $t4, .L_char_buffer\n");
+	gen_write_syscall();
+	printf("	addiu $t7, $t7, -1\n");     // 桁数減少
+	printf("	j .printf_print_digits_%d_%d\n", printf_id, arg_index);
+	
+	printf(".printf_int_done_%d_%d:\n", printf_id, arg_index);
+}
+
+// printf関数呼び出しの生成（リファクタリング版）
+void gen_printf_call(Node* node) {
+	if (node->argc < 1) {
+		printf("	li $t0, 0\n");
+		printf("	addiu $sp, $sp, -4\n");
+		printf("	sw $t0, 0($sp)\n");
+		return;
+	}
+	
+	// フォーマット文字列を取得
+	gen(node->args[0]);
+	printf("	lw $t8, 0($sp)\n");          // 文字列アドレス
+	printf("	addiu $sp, $sp, 4\n");
+	
+	int printf_id = label_count++;
+	
+	// 引数インデックスをレジスタで管理（$t9を使用）
+	printf("	li $t9, 1\n");               // 引数インデックス（1から開始）
+	
+	printf(".printf_loop_%d:\n", printf_id);
+	printf("	lb $t3, 0($t8)\n");          // 1文字読み込み
+	printf("	beq $t3, $zero, .printf_end_%d\n", printf_id);
+	
+	// '%'文字をチェック
+	printf("	li $t4, 37\n");              // '%' のASCII値
+	printf("	bne $t3, $t4, .printf_normal_char_%d\n", printf_id);
+	
+	// '%'の次の文字をチェック
+	printf("	addiu $t8, $t8, 1\n");
+	printf("	lb $t3, 0($t8)\n");
+	printf("	beq $t3, $zero, .printf_end_%d\n", printf_id);
+	
+	// 'd'かチェック（整数出力）
+	printf("	li $t4, 100\n");             // 'd' のASCII値
+	printf("	bne $t3, $t4, .printf_normal_char_%d\n", printf_id);
+	
+	// %d が見つかった場合：対応する引数があるかチェック
+	printf("	li $t4, %d\n", node->argc);  // 総引数数
+	printf("	bge $t9, $t4, .printf_no_more_args_%d\n", printf_id);
+	
+	// 引数を動的に取得（簡易版：最大4つまで対応）
+	printf("	li $t4, 1\n");
+	printf("	beq $t9, $t4, .printf_arg1_%d\n", printf_id);
+	printf("	li $t4, 2\n");
+	printf("	beq $t9, $t4, .printf_arg2_%d\n", printf_id);
+	printf("	li $t4, 3\n");
+	printf("	beq $t9, $t4, .printf_arg3_%d\n", printf_id);
+	printf("	j .printf_no_more_args_%d\n", printf_id);
+	
+	// 各引数を個別に処理
+	printf(".printf_arg1_%d:\n", printf_id);
+	if (node->argc > 1) {
+		gen(node->args[1]);
+		printf("	lw $a1, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		gen_printf_integer(printf_id, 1);
+	}
+	printf("	addiu $t9, $t9, 1\n");       // 引数インデックス増加
+	printf("	j .printf_continue_%d\n", printf_id);
+	
+	printf(".printf_arg2_%d:\n", printf_id);
+	if (node->argc > 2) {
+		gen(node->args[2]);
+		printf("	lw $a1, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		gen_printf_integer(printf_id, 2);
+	}
+	printf("	addiu $t9, $t9, 1\n");
+	printf("	j .printf_continue_%d\n", printf_id);
+	
+	printf(".printf_arg3_%d:\n", printf_id);
+	if (node->argc > 3) {
+		gen(node->args[3]);
+		printf("	lw $a1, 0($sp)\n");
+		printf("	addiu $sp, $sp, 4\n");
+		gen_printf_integer(printf_id, 3);
+	}
+	printf("	addiu $t9, $t9, 1\n");
+	printf("	j .printf_continue_%d\n", printf_id);
+	
+	printf(".printf_no_more_args_%d:\n", printf_id);
+	// 引数がない場合は'0'を出力
+	printf("	li $t4, 48\n");              // '0' のASCII値
+	printf("	sb $t4, .L_char_buffer\n");
+	gen_write_syscall();
+	printf("	j .printf_continue_%d\n", printf_id);
+	
+	// 通常文字出力
+	gen_printf_char(printf_id);
+	
+	printf(".printf_continue_%d:\n", printf_id);
+	printf("	addiu $t8, $t8, 1\n");       // 次の文字へ
+	printf("	j .printf_loop_%d\n", printf_id);
+	
+	printf(".printf_end_%d:\n", printf_id);
+	
+	// 戻り値をスタックにプッシュ
+	printf("	li $t0, 0\n");
+	printf("	addiu $sp, $sp, -4\n");
+	printf("	sw $t0, 0($sp)\n");
+}
+
+// =============================================================================
+// 組み込み関数実装
+// =============================================================================
+
+// 組み込み関数呼び出しの総合処理
+void gen_builtin_call(Node* node) {
+	switch (node->builtin_kind) {
+	case BUILTIN_PUTCHAR:
+		gen_putchar(node);
+		break;
+	case BUILTIN_GETCHAR:
+		gen_getchar(node);
+		break;
+	case BUILTIN_PUTS:
+		gen_puts(node);
+		break;
+	case BUILTIN_STRLEN:
+		gen_strlen(node);
+		break;
+	case BUILTIN_STRCMP:
+		gen_strcmp(node);
+		break;
+	case BUILTIN_STRCPY:
+		gen_strcpy(node);
+		break;
+	default:
+		error("unknown builtin function");
+	}
+}
+
+// int putchar(int c) - 1文字出力
+void gen_putchar(Node* node) {
+	if (node->argc != 1) {
+		error("putchar requires exactly 1 argument");
+	}
+	
+	// 引数を評価
+	gen(node->args[0]);
+	printf("\tlw $t0, 0($sp)\n");      // 文字コードを取得
+	printf("\taddiu $sp, $sp, 4\n");
+	
+	// 文字をバッファに格納
+	printf("\tsb $t0, .L_char_buffer\n");
+	
+	// writeシステムコール
+	gen_write_syscall();
+	
+	// 戻り値として文字コードをスタックにプッシュ
+	printf("\taddiu $sp, $sp, -4\n");
+	printf("\tsw $t0, 0($sp)\n");
+}
+
+// int puts(const char* s) - 文字列出力
+void gen_puts(Node* node) {
+	if (node->argc != 1) {
+		error("puts requires exactly 1 argument");
+	}
+	
+	// 文字列ポインタを評価
+	gen(node->args[0]);
+	printf("\tlw $t8, 0($sp)\n");          // 文字列アドレス
+	printf("\taddiu $sp, $sp, 4\n");
+	
+	int puts_id = label_count++;
+	
+	// 文字列の各文字を出力
+	printf(".puts_loop_%d:\n", puts_id);
+	printf("\tlb $t3, 0($t8)\n");          // 1文字読み込み
+	printf("\tbeq $t3, $zero, .puts_newline_%d\n", puts_id);
+	
+	// 文字をバッファに格納して出力
+	printf("\tsb $t3, .L_char_buffer\n");
+	gen_write_syscall();
+	printf("\taddiu $t8, $t8, 1\n");       // 次の文字へ
+	printf("\tj .puts_loop_%d\n", puts_id);
+	
+	// 改行文字を出力
+	printf(".puts_newline_%d:\n", puts_id);
+	printf("\tli $t3, 10\n");              // n のASCII値
+	printf("\tsb $t3, .L_char_buffer\n");
+	gen_write_syscall();
+	
+	// 戻り値として0をスタックにプッシュ
+	printf("\tli $t0, 0\n");
+	printf("\taddiu $sp, $sp, -4\n");
+	printf("\tsw $t0, 0($sp)\n");
+}
+
+// int strlen(const char* s) - 文字列長計算  
+void gen_strlen(Node* node) {
+	if (node->argc != 1) {
+		error("strlen requires exactly 1 argument");
+	}
+	
+	// 文字列ポインタを評価
+	gen(node->args[0]);
+	printf("\tlw $t8, 0($sp)\n");          // 文字列アドレス
+	printf("\taddiu $sp, $sp, 4\n");
+	
+	int strlen_id = label_count++;
+	
+	// 長さカウンタを初期化
+	printf("\tli $t7, 0\n");               // 長さカウンタ
+	printf("\tmove $t9, $t8\n");           // 作業用ポインタ
+	
+	// 文字列をスキャンしてヌル文字を探す
+	printf(".strlen_loop_%d:\n", strlen_id);
+	printf("\tlb $t3, 0($t9)\n");          // 1文字読み込み
+	printf("\tbeq $t3, $zero, .strlen_done_%d\n", strlen_id);
+	printf("\taddiu $t7, $t7, 1\n");       // 長さ増加
+	printf("\taddiu $t9, $t9, 1\n");       // 次の文字へ
+	printf("\tj .strlen_loop_%d\n", strlen_id);
+	
+	printf(".strlen_done_%d:\n", strlen_id);
+	
+	// 戻り値をスタックにプッシュ
+	printf("\taddiu $sp, $sp, -4\n");
+	printf("\tsw $t7, 0($sp)\n");
+}
+
+// int getchar(void) - 1文字入力
+void gen_getchar(Node* node) {
+	if (node->argc != 0) {
+		error("getchar requires no arguments");
+	}
+	
+	// readシステムコール（stdin=0, buffer=.L_char_buffer, count=1）
+	printf("\tli $a0, 0\n");               // stdin
+	printf("\tla $a1, .L_char_buffer\n");  // バッファアドレス
+	printf("\tli $a2, 1\n");               // 1バイト
+	printf("\tli $v0, 4003\n");            // readシステムコール
+	printf("\tsyscall\n");
+	
+	// バッファから文字を読み込み
+	printf("\tlb $t0, .L_char_buffer\n");  // バイト単位で読み込み
+	
+	// 戻り値をスタックにプッシュ
+	printf("\taddiu $sp, $sp, -4\n");
+	printf("\tsw $t0, 0($sp)\n");
+}
+
+// int strcmp(const char* s1, const char* s2) - 文字列比較
+void gen_strcmp(Node* node) {
+	if (node->argc != 2) {
+		error("strcmp requires exactly 2 arguments");
+	}
+	
+	// 引数を評価
+	gen(node->args[0]);                     // s1
+	gen(node->args[1]);                     // s2
+	printf("\tlw $t9, 0($sp)\n");          // s2
+	printf("\taddiu $sp, $sp, 4\n");
+	printf("\tlw $t8, 0($sp)\n");          // s1
+	printf("\taddiu $sp, $sp, 4\n");
+	
+	int strcmp_id = label_count++;
+	
+	// 文字列を1文字ずつ比較
+	printf(".strcmp_loop_%d:\n", strcmp_id);
+	printf("\tlb $t3, 0($t8)\n");          // s1の文字
+	printf("\tlb $t4, 0($t9)\n");          // s2の文字
+	
+	// どちらかがヌル文字か
+	printf("\tbeq $t3, $zero, .strcmp_check_s2_%d\n", strcmp_id);
+	printf("\tbeq $t4, $zero, .strcmp_s1_longer_%d\n", strcmp_id);
+	
+	// 文字が異なるか
+	printf("\tbne $t3, $t4, .strcmp_different_%d\n", strcmp_id);
+	
+	// 次の文字へ
+	printf("\taddiu $t8, $t8, 1\n");
+	printf("\taddiu $t9, $t9, 1\n");
+	printf("\tj .strcmp_loop_%d\n", strcmp_id);
+	
+	// s1がヌル文字の場合
+	printf(".strcmp_check_s2_%d:\n", strcmp_id);
+	printf("\tbeq $t4, $zero, .strcmp_equal_%d\n", strcmp_id);
+	
+	// s2が長い場合
+	printf("\tli $t0, -1\n");
+	printf("\tj .strcmp_done_%d\n", strcmp_id);
+	
+	// s1が長い場合
+	printf(".strcmp_s1_longer_%d:\n", strcmp_id);
+	printf("\tli $t0, 1\n");
+	printf("\tj .strcmp_done_%d\n", strcmp_id);
+	
+	// 文字が異なる場合
+	printf(".strcmp_different_%d:\n", strcmp_id);
+	printf("\tsub $t0, $t3, $t4\n");       // s1[i] - s2[i]
+	printf("\tj .strcmp_done_%d\n", strcmp_id);
+	
+	// 等しい場合
+	printf(".strcmp_equal_%d:\n", strcmp_id);
+	printf("\tli $t0, 0\n");
+	
+	printf(".strcmp_done_%d:\n", strcmp_id);
+	
+	// 戻り値をスタックにプッシュ
+	printf("\taddiu $sp, $sp, -4\n");
+	printf("\tsw $t0, 0($sp)\n");
+}
+
+// char* strcpy(char* dest, const char* src) - 文字列コピー
+void gen_strcpy(Node* node) {
+	if (node->argc != 2) {
+		error("strcpy requires exactly 2 arguments");
+	}
+	
+	// 引数を評価
+	gen(node->args[0]);                     // dest
+	gen(node->args[1]);                     // src
+	printf("\tlw $t9, 0($sp)\n");          // src
+	printf("\taddiu $sp, $sp, 4\n");
+	printf("\tlw $t8, 0($sp)\n");          // dest
+	printf("\taddiu $sp, $sp, 4\n");
+	
+	int strcpy_id = label_count++;
+	
+	// destの元の値を保存（戻り値用）
+	printf("\tmove $t7, $t8\n");           // destの元のアドレス
+	
+	// 文字列を1文字ずつコピー
+	printf(".strcpy_loop_%d:\n", strcpy_id);
+	printf("\tlb $t3, 0($t9)\n");          // srcから1文字読み込み
+	printf("\tsb $t3, 0($t8)\n");          // destに1文字書き込み
+	printf("\tbeq $t3, $zero, .strcpy_done_%d\n", strcpy_id);  // ヌル文字で終了
+	
+	// 次の文字へ
+	printf("\taddiu $t8, $t8, 1\n");
+	printf("\taddiu $t9, $t9, 1\n");
+	printf("\tj .strcpy_loop_%d\n", strcpy_id);
+	
+	printf(".strcpy_done_%d:\n", strcpy_id);
+	
+	// destのアドレスを戻り値としてスタックにプッシュ
+	printf("\taddiu $sp, $sp, -4\n");
+	printf("\tsw $t7, 0($sp)\n");
+}
+

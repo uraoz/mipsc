@@ -69,6 +69,7 @@ typedef enum {
 	TK_DIV_ASSIGN, // /=
 	TK_INC, // ++
 	TK_DEC, // --
+	TK_ARROW, // ->
 	TK_AND, // &&
 	TK_OR, // ||
 	TK_NOT, // !
@@ -134,6 +135,7 @@ typedef enum {
 	ND_CONTINUE, // continue文
 	ND_MEMBER, // メンバアクセス (.)
 	ND_STRUCT_DEF, // 構造体定義
+	ND_BUILTIN_CALL, // 組み込み関数呼び出し
 } NodeKind;
 
 // 型の種類を表すenum
@@ -145,6 +147,16 @@ typedef enum {
 	TY_ARRAY,  // 配列型
 	TY_STRUCT, // 構造体型
 } TypeKind;
+
+// 組み込み関数の種類を表すenum
+typedef enum {
+	BUILTIN_PUTCHAR,  // int putchar(int c)
+	BUILTIN_GETCHAR,  // int getchar(void)
+	BUILTIN_PUTS,     // int puts(const char* s)
+	BUILTIN_STRLEN,   // int strlen(const char* s)
+	BUILTIN_STRCMP,   // int strcmp(const char* s1, const char* s2)
+	BUILTIN_STRCPY,   // char* strcpy(char* dest, const char* src)
+} BuiltinKind;
 
 // 前方宣言
 typedef struct Type Type;
@@ -199,6 +211,7 @@ struct Node {
 	Type* type; // ノードの型情報
 	char* str; // kindがND_STRのときの文字列データ
 	int str_len; // kindがND_STRのときの文字列の長さ
+	BuiltinKind builtin_kind; // kindがND_BUILTIN_CALLのときの組み込み関数の種類
 };
 
 // 文字列リテラルを管理する構造体
@@ -216,7 +229,7 @@ struct LVar {
 	LVar* next; // 次の変数かNULL
 	char* name; // 変数の名前
 	int len;    // 名前の長さ
-	int offset; // RBPからのオフセット
+	int offset; // $s8からのオフセット
 	Type* type; // 変数の型情報
 };
 
@@ -318,6 +331,22 @@ void gen_lval(Node* node);
 void gen_compound_assign(Node* node, const char* operation, bool is_div);
 void gen_inc_dec(Node* node, int delta, bool is_prefix);
 void gen_variable_access(Node* node, bool is_local);
+
+// printf実装の補助関数
+void gen_printf_call(Node* node);
+void gen_printf_char(int printf_id);
+void gen_printf_integer(int printf_id, int arg_index);
+void gen_write_syscall(void);
+
+// 組み込み関数サポート
+BuiltinKind get_builtin_kind(Token* tok);
+void gen_builtin_call(Node* node);
+void gen_putchar(Node* node);
+void gen_getchar(Node* node);
+void gen_puts(Node* node);
+void gen_strlen(Node* node);
+void gen_strcmp(Node* node);
+void gen_strcpy(Node* node);
 
 // ループラベル管理関数
 void push_loop_labels(int break_label, int continue_label);
