@@ -182,3 +182,4 @@ mips-linux-gnu-gcc output.s -o program -nostdlib -static
 qemu-mips program
 echo $? 
 ```
+#### 参考にしたもの https://www.sigbus.info/compilerbook
