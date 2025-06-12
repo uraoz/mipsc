@@ -1,6 +1,6 @@
 Cのサブセットを解釈してMIPSアセンブリコードを生成するコンパイラ
 
-### 1. 字句解析`parse.c:tokenize()`
+### 字句解析`parse.c:tokenize()`
 
 **認識可能なトークン**:
 - **キーワード**: `int`, `char`, `if`, `else`, `while`, `for`, `return`, `sizeof`
@@ -8,10 +8,6 @@ Cのサブセットを解釈してMIPSアセンブリコードを生成するコ
 - **区切り文字**: `(`, `)`, `{`, `}`, `[`, `]`, `;`, `,`
 - **リテラル**: 整数、文字、文字列
 - **識別子**: 変数名、関数名
-
-### 2. 構文解析`parse.c
-
-再帰下降構文解析
 
 #### 文法定義（拡張BNF記法）
 
@@ -68,10 +64,6 @@ type       ::= ("int" | "char") "*"*
 13. postfix()     # 後置演算子 ([], (), ++, --)
 14. primary()     # 基本要素 (識別子、数値、括弧式)
 ```
-
-### 3. 意味解析`parse.c` 
-
-ASTに型情報を付与し、型の整合性をチェックします。
 
 **サポートする型**:
 - `int`: 32ビット整数
@@ -180,15 +172,13 @@ sw $v0, 0($sp)
 ## ビルドと実行
 
 ```bash
-# コンパイラをビルド
 make
 
-# テスト実行
 make test
 
 # 使用例
 ./mipsc "int main() { return 42; }" > output.s
 mips-linux-gnu-gcc output.s -o program -nostdlib -static
 qemu-mips program
-echo $?  # 42 が出力される
+echo $? 
 ```
