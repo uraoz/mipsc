@@ -9,7 +9,7 @@ Cのサブセットを解釈してMIPSアセンブリコードを生成するコ
 - **リテラル**: 整数、文字、文字列
 - **識別子**: 変数名、関数名
 
-#### 文法定義（拡張BNF記法）
+#### 文法定義（拡張BNF記法）無限ループ回避のために自分自身を直接呼ばない(addはmulを挟む等)
 
 ```bnf
 program    ::= (global_var | function)*
@@ -182,4 +182,5 @@ mips-linux-gnu-gcc output.s -o program -nostdlib -static
 qemu-mips program
 echo $? 
 ```
-#### 参考にしたもの https://www.sigbus.info/compilerbook
+#### 参考にしたもの 
+https://www.sigbus.info/compilerbook
