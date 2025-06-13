@@ -1,5 +1,5 @@
 CFLAGS=-std=c11 -g -static
-SRCS=$(wildcard *.c)
+SRCS=main.c parse.c codegen.c
 OBJS=$(SRCS:.c=.o)
 
 mipsc: $(OBJS)
